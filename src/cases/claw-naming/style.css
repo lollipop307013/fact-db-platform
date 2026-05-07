@@ -1,0 +1,1797 @@
+/* ========================================
+   Claw Naming - 移动端小程序风格样式
+   ======================================== */
+
+/* === 移动端容器框架 === */
+.claw-mobile-frame {
+  width: 100%;
+  max-width: 430px;
+  margin: 0 auto;
+  height: 100vh;
+  background: #f5f6fa;
+  position: relative;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+.claw-status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #0a1628 0%, #162240 100%);
+  flex-shrink: 0;
+}
+
+.claw-status-bar-icons {
+  display: flex;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.claw-page-container {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ========================================
+   底部 Tab 栏
+   ======================================== */
+.claw-bottom-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  height: 56px;
+  background: #fff;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+}
+
+.claw-bottom-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 20px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--td-text-color-placeholder, #999);
+}
+
+.claw-bottom-tab--active {
+  color: var(--td-brand-color, #0052d9);
+}
+
+.claw-bottom-tab-icon {
+  font-size: 22px;
+}
+
+.claw-bottom-tab-label {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.claw-bottom-tab:active {
+  transform: scale(0.92);
+}
+
+/* ========================================
+   对话界面 (ClawChat)
+   ======================================== */
+.claw-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #f5f6fa;
+}
+
+.claw-chat-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
+}
+
+.claw-chat-topbar-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff6b35, #ff9a56);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.claw-chat-topbar-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--td-text-color-primary, #1a1a1a);
+}
+
+.claw-chat-topbar-status {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder, #999);
+}
+
+/* 消息列表 */
+.claw-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.claw-chat-system {
+  text-align: center;
+  font-size: 12px;
+  color: var(--td-text-color-placeholder, #999);
+  padding: 4px 0;
+}
+
+.claw-chat-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.claw-chat-row--user {
+  flex-direction: row-reverse;
+}
+
+.claw-chat-msg-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff6b35, #ff9a56);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.claw-chat-msg-avatar--user {
+  background: linear-gradient(135deg, #0052d9, #3d7ff7);
+}
+
+.claw-chat-msg-col {
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.claw-chat-row--user .claw-chat-msg-col {
+  align-items: flex-end;
+}
+
+.claw-chat-bubble {
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.claw-chat-bubble--claw {
+  background: #fff;
+  color: var(--td-text-color-primary, #1a1a1a);
+  border-top-left-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.claw-chat-bubble--user {
+  background: var(--td-brand-color, #0052d9);
+  color: #fff;
+  border-top-right-radius: 4px;
+}
+
+.claw-chat-typing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--td-text-color-placeholder, #999);
+}
+
+.claw-chat-time {
+  font-size: 11px;
+  color: var(--td-text-color-placeholder, #bbb);
+}
+
+/* Skill 快捷网格 */
+.claw-chat-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.claw-chat-skill-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid rgba(0, 82, 217, 0.12);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  color: var(--td-brand-color, #0052d9);
+}
+
+.claw-chat-skill-item:active {
+  background: rgba(0, 82, 217, 0.06);
+  transform: scale(0.96);
+}
+
+.claw-chat-skill-icon {
+  font-size: 16px;
+}
+
+.claw-chat-skill-label {
+  font-weight: 500;
+}
+
+/* 嵌入搭子卡片 */
+.claw-chat-match-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px;
+  border: 1px solid rgba(0, 168, 112, 0.15);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.claw-chat-match-card:active {
+  transform: scale(0.97);
+}
+
+.claw-chat-match-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.claw-chat-match-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #f0f7ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.claw-chat-match-info {
+  flex: 1;
+}
+
+.claw-chat-match-name {
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.claw-chat-online-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #00a870;
+  display: inline-block;
+}
+
+.claw-chat-match-tags {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.claw-chat-match-score {
+  text-align: center;
+}
+
+.claw-chat-match-score-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: #00a870;
+}
+
+.claw-chat-match-score-label {
+  font-size: 10px;
+  color: var(--td-text-color-placeholder, #999);
+  display: block;
+}
+
+.claw-chat-match-reason {
+  font-size: 12px;
+  color: var(--td-text-color-secondary, #666);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.claw-chat-match-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--td-brand-color, #0052d9);
+  font-weight: 500;
+}
+
+/* 嵌入分享卡片 */
+.claw-chat-share-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px;
+  border: 1px solid rgba(0, 82, 217, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.claw-chat-share-card-icon {
+  font-size: 28px;
+}
+
+.claw-chat-share-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--td-text-color-primary, #1a1a1a);
+}
+
+.claw-chat-share-card-desc {
+  font-size: 12px;
+  color: var(--td-text-color-secondary, #666);
+  line-height: 1.5;
+}
+
+.claw-chat-share-btn {
+  align-self: flex-end;
+  padding: 6px 16px;
+  background: var(--td-brand-color, #0052d9);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.claw-chat-share-btn:active {
+  opacity: 0.8;
+  transform: scale(0.96);
+}
+
+/* 输入区 */
+.claw-chat-input-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #fff;
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
+}
+
+.claw-chat-input {
+  flex: 1;
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--td-border-level-2-color, #e7e7e7);
+  border-radius: 20px;
+  font-size: 14px;
+  outline: none;
+  background: #f8f9fc;
+  transition: border-color 0.2s;
+}
+
+.claw-chat-input:focus {
+  border-color: var(--td-brand-color, #0052d9);
+  background: #fff;
+}
+
+.claw-chat-send-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: #e7e7e7;
+  color: #999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.claw-chat-send-btn--active {
+  background: var(--td-brand-color, #0052d9);
+  color: #fff;
+}
+
+.claw-chat-send-btn:active {
+  transform: scale(0.9);
+}
+
+/* ========================================
+   任务中心 (TaskCenter)
+   ======================================== */
+.claw-tc {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #f5f6fa;
+  position: relative;
+}
+
+.claw-tc-header {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.claw-tc-header-bg {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #0a1628 0%, #1a2a4a 50%, #0e2a5c 100%);
+  z-index: 0;
+}
+
+.claw-tc-header-bg::after {
+  content: "";
+  position: absolute;
+  bottom: -40px;
+  left: -20%;
+  width: 140%;
+  height: 80px;
+  background: #f5f6fa;
+  border-radius: 50% 50% 0 0;
+}
+
+.claw-tc-header-content {
+  position: relative;
+  z-index: 1;
+  padding: 20px 20px 36px;
+}
+
+.claw-tc-shrimp-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.claw-tc-shrimp-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff6b35, #ff9a56);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(255, 107, 53, 0.4);
+  flex-shrink: 0;
+}
+
+.claw-tc-shrimp-emoji { font-size: 28px; }
+
+.claw-tc-shrimp-info { flex: 1; }
+
+.claw-tc-shrimp-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.claw-tc-shrimp-desc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.claw-tc-quick-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.claw-tc-quick-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+
+.claw-tc-quick-btn:active {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(0.96);
+}
+
+.claw-tc-quick-btn > span:first-child { font-size: 22px; }
+
+.claw-tc-filters {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px;
+  margin-top: -8px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.claw-tc-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--td-border-level-2-color, #e7e7e7);
+  background: #fff;
+  font-size: 13px;
+  color: var(--td-text-color-secondary, #666);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.claw-tc-filter-btn--active {
+  background: var(--td-brand-color, #0052d9);
+  color: #fff;
+  border-color: var(--td-brand-color, #0052d9);
+}
+
+.claw-tc-filter-count { font-size: 11px; opacity: 0.8; }
+
+.claw-tc-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.claw-tc-task {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s;
+}
+
+.claw-tc-task--clickable { cursor: pointer; }
+
+.claw-tc-task--clickable:active {
+  transform: scale(0.98);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.claw-tc-task-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #f5f6fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.claw-tc-task-body { flex: 1; min-width: 0; }
+
+.claw-tc-task-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.claw-tc-task-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--td-text-color-primary, #1a1a1a);
+  line-height: 1.4;
+}
+
+.claw-tc-task-status {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.claw-tc-task-summary {
+  font-size: 13px;
+  color: var(--td-text-color-secondary, #666);
+  line-height: 1.6;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.claw-tc-task-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.claw-tc-task-time {
+  font-size: 11px;
+  color: var(--td-text-color-placeholder, #999);
+}
+
+.claw-tc-task-report-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, rgba(255, 107, 53, 0.06), rgba(255, 154, 86, 0.08));
+  border-radius: 10px;
+  font-size: 12px;
+  color: #ff6b35;
+  font-weight: 500;
+}
+
+.claw-tc-task-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--td-brand-color, #0052d9);
+}
+
+.claw-tc-fab {
+  position: absolute;
+  right: 20px;
+  bottom: 16px;
+  z-index: 10;
+}
+
+.claw-tc-fab .t-button {
+  width: 52px !important;
+  height: 52px !important;
+  box-shadow: 0 4px 20px rgba(0, 82, 217, 0.35);
+}
+
+/* ========================================
+   新建任务底部抽屉
+   ======================================== */
+.claw-drawer-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 50;
+  animation: claw-fade-in 0.25s ease;
+}
+
+@keyframes claw-fade-in {
+  from { opacity: 0 }
+  to { opacity: 1 }
+}
+
+.claw-drawer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  z-index: 60;
+  transform: translateY(100%);
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
+  max-height: 70%;
+  overflow-y: auto;
+}
+
+.claw-drawer--open {
+  transform: translateY(0);
+}
+
+.claw-drawer-handle {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 4px;
+  cursor: pointer;
+}
+
+.claw-drawer-handle-bar {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: #ddd;
+}
+
+.claw-drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px 16px;
+}
+
+.claw-drawer-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff6b35, #ff9a56);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.claw-drawer-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--td-text-color-primary, #1a1a1a);
+}
+
+.claw-drawer-subtitle {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder, #999);
+  margin-top: 2px;
+}
+
+/* 快捷预设 */
+.claw-drawer-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 20px 16px;
+}
+
+.claw-drawer-preset {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--td-border-level-2-color, #e7e7e7);
+  background: #fff;
+  font-size: 13px;
+  color: var(--td-text-color-secondary, #666);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.claw-drawer-preset:active {
+  background: rgba(0, 82, 217, 0.06);
+  border-color: var(--td-brand-color, #0052d9);
+  color: var(--td-brand-color, #0052d9);
+  transform: scale(0.96);
+}
+
+/* 输入区 */
+.claw-drawer-input-area {
+  padding: 0 20px 12px;
+}
+
+.claw-drawer-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--td-border-level-2-color, #e7e7e7);
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+  background: #f8f9fc;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.claw-drawer-textarea:focus {
+  border-color: var(--td-brand-color, #0052d9);
+  background: #fff;
+}
+
+.claw-drawer-footer {
+  display: flex;
+  gap: 10px;
+  padding: 8px 20px 24px;
+}
+
+/* ========================================
+   报告详情 (ReportDetail)
+   ======================================== */
+.claw-report {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #f5f6fa;
+}
+
+.claw-report-navbar {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  height: 48px;
+  background: #fff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
+}
+
+.claw-report-back {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: background 0.2s;
+  color: var(--td-text-color-primary, #1a1a1a);
+}
+
+.claw-report-back:active { background: rgba(0, 0, 0, 0.06); }
+
+.claw-report-navbar-title {
+  flex: 1;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--td-text-color-primary, #1a1a1a);
+}
+
+.claw-report-navbar-right { width: 32px; }
+
+.claw-report-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.claw-shrimp-bubble {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.claw-shrimp-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff6b35, #ff9a56);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.claw-shrimp-emoji { font-size: 22px; }
+
+.claw-shrimp-bubble-content { flex: 1; min-width: 0; }
+
+.claw-shrimp-bubble-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.claw-shrimp-time {
+  font-size: 11px;
+  color: var(--td-text-color-placeholder, #999);
+}
+
+.claw-shrimp-bubble-text {
+  font-size: 14px;
+  color: var(--td-text-color-primary, #1a1a1a);
+  line-height: 1.6;
+}
+
+.claw-report-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.claw-report-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--td-text-color-primary, #1a1a1a);
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+
+.claw-report-card-section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--td-text-color-primary, #1a1a1a);
+  margin-bottom: 12px;
+}
+
+.claw-report-summary {
+  font-size: 14px;
+  color: var(--td-text-color-secondary, #666);
+  line-height: 1.7;
+  transition: all 0.3s;
+}
+
+.claw-report-summary--collapsed {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.claw-report-expand-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 13px;
+  color: var(--td-brand-color, #0052d9);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.claw-report-expand-btn:active { opacity: 0.7; }
+
+.claw-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 10px;
+}
+
+.claw-stat-item {
+  text-align: center;
+  padding: 12px 8px;
+  background: #f8f9fc;
+  border-radius: 12px;
+}
+
+.claw-stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--td-text-color-primary, #1a1a1a);
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+
+.claw-stat-unit {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--td-text-color-secondary, #666);
+  margin-left: 1px;
+}
+
+.claw-stat-trend { font-size: 14px; margin-left: 2px; }
+.claw-stat-trend--up { color: #00a870; }
+.claw-stat-trend--down { color: #e34d59; }
+
+.claw-stat-label {
+  font-size: 12px;
+  color: var(--td-text-color-secondary, #666);
+}
+
+/* ========================================
+   富文本排版 (Article)
+   ======================================== */
+.claw-article {
+  font-size: 14px;
+  color: var(--td-text-color-primary, #1a1a1a);
+  line-height: 1.8;
+}
+
+.claw-article-heading {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--td-text-color-primary, #1a1a1a);
+  margin: 4px 0 10px;
+  line-height: 1.4;
+}
+
+.claw-article-paragraph {
+  margin: 0 0 14px;
+  line-height: 1.8;
+  color: var(--td-text-color-primary, #333);
+  text-align: justify;
+}
+
+.claw-article-quote {
+  margin: 12px 0;
+  padding: 12px 16px;
+  background: #f8f9fc;
+  border-left: 3px solid var(--td-brand-color, #0052d9);
+  border-radius: 0 10px 10px 0;
+}
+
+.claw-article-quote-text {
+  font-size: 14px;
+  color: var(--td-text-color-secondary, #555);
+  line-height: 1.7;
+  font-style: italic;
+}
+
+.claw-article-quote-source {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--td-text-color-placeholder, #999);
+  font-style: normal;
+}
+
+.claw-article-highlight {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(255, 183, 77, 0.1), rgba(255, 152, 0, 0.08));
+  border-radius: 12px;
+  font-size: 13px;
+  color: #b87300;
+  line-height: 1.7;
+  font-weight: 500;
+}
+
+.claw-article-highlight-icon { flex-shrink: 0; font-size: 16px; }
+
+.claw-article-list {
+  margin: 10px 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.claw-article-list-item {
+  position: relative;
+  padding: 6px 0 6px 20px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--td-text-color-primary, #333);
+}
+
+.claw-article-list-item::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 14px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--td-brand-color, #0052d9);
+}
+
+.claw-article-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.06), transparent);
+  margin: 16px 0;
+}
+
+.claw-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.claw-source-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f8f9fc;
+  border-radius: 10px;
+  color: var(--td-text-color-secondary, #666);
+}
+
+.claw-source-info { flex: 1; }
+
+.claw-source-title {
+  font-size: 13px;
+  color: var(--td-text-color-primary, #1a1a1a);
+  font-weight: 500;
+}
+
+.claw-source-origin {
+  font-size: 11px;
+  color: var(--td-text-color-placeholder, #999);
+  margin-top: 2px;
+}
+
+.claw-related-scroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+
+.claw-related-scroll::-webkit-scrollbar { display: none; }
+
+.claw-related-card {
+  min-width: 160px;
+  padding: 12px;
+  background: #f8f9fc;
+  border-radius: 12px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.claw-related-card:active { transform: scale(0.97); }
+
+.claw-related-card-title {
+  font-size: 13px;
+  color: var(--td-text-color-primary, #1a1a1a);
+  margin-top: 8px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.claw-report-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 8px 16px;
+  background: #fff;
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
+}
+
+.claw-report-footer .t-button { font-size: 13px !important; }
+
+.claw-footer-btn--active {
+  color: var(--td-brand-color, #0052d9) !important;
+}
+
+/* ========================================
+   搭子匹配 (MatchHub)
+   ======================================== */
+.claw-match {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #f5f6fa;
+}
+
+.claw-match-header {
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.claw-match-header-bg {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #0a1628 0%, #1a2a4a 50%, #0e2a5c 100%);
+}
+
+.claw-match-header-content {
+  position: relative;
+  z-index: 1;
+  padding: 20px 20px 24px;
+}
+
+.claw-match-header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.claw-match-header-subtitle {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Tab 切换 */
+.claw-match-tabs {
+  display: flex;
+  gap: 0;
+  background: #fff;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.claw-match-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 0;
+  border: none;
+  background: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--td-text-color-secondary, #666);
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.claw-match-tab--active {
+  color: var(--td-brand-color, #0052d9);
+}
+
+.claw-match-tab--active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 30%;
+  right: 30%;
+  height: 2px;
+  background: var(--td-brand-color, #0052d9);
+  border-radius: 1px;
+}
+
+.claw-match-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.claw-match-refresh-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.claw-match-refresh-text {
+  font-size: 13px;
+  color: var(--td-text-color-secondary, #666);
+}
+
+.claw-match-refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border: 1px solid var(--td-border-level-2-color, #e7e7e7);
+  border-radius: 16px;
+  background: #fff;
+  font-size: 12px;
+  color: var(--td-brand-color, #0052d9);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.claw-match-refresh-btn:active { transform: scale(0.95); }
+
+/* 搭子卡片 */
+.claw-match-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.claw-match-player-card {
+  display: flex;
+  gap: 14px;
+  padding: 16px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.claw-match-player-card:active {
+  transform: scale(0.98);
+}
+
+.claw-match-score-ring {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 3px solid #0052d9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.claw-match-score-ring-avatar {
+  font-size: 26px;
+}
+
+.claw-match-score-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.claw-match-player-body { flex: 1; min-width: 0; }
+
+.claw-match-player-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--td-text-color-primary, #1a1a1a);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.claw-match-online {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #00a870;
+  display: inline-block;
+}
+
+.claw-match-player-rank {
+  font-size: 12px;
+  color: var(--td-text-color-secondary, #666);
+  margin-bottom: 4px;
+}
+
+.claw-match-player-heroes {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder, #999);
+  margin-bottom: 6px;
+}
+
+.claw-match-player-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.claw-match-player-reason {
+  font-size: 12px;
+  color: #ff6b35;
+  background: rgba(255, 107, 53, 0.06);
+  padding: 6px 10px;
+  border-radius: 8px;
+  line-height: 1.5;
+}
+
+/* 好友匹配区 */
+.claw-match-friend-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.claw-match-friend-invite {
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px;
+  text-align: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.claw-match-friend-invite-icon { font-size: 40px; margin-bottom: 12px; }
+
+.claw-match-friend-invite-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--td-text-color-primary, #1a1a1a);
+  margin-bottom: 8px;
+}
+
+.claw-match-friend-invite-desc {
+  font-size: 13px;
+  color: var(--td-text-color-secondary, #666);
+  line-height: 1.6;
+}
+
+/* 小程序卡片预览 */
+.claw-match-miniapp-card {
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.claw-match-miniapp-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.claw-match-miniapp-card-avatar {
+  font-size: 18px;
+}
+
+.claw-match-miniapp-card-from {
+  font-size: 13px;
+  color: var(--td-text-color-secondary, #666);
+}
+
+.claw-match-miniapp-card-body {
+  padding: 14px;
+}
+
+.claw-match-miniapp-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--td-text-color-primary, #1a1a1a);
+  margin-bottom: 6px;
+}
+
+.claw-match-miniapp-card-desc {
+  font-size: 13px;
+  color: var(--td-text-color-secondary, #666);
+  line-height: 1.5;
+}
+
+.claw-match-miniapp-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #f8f9fc;
+  font-size: 12px;
+  color: var(--td-text-color-placeholder, #999);
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.claw-match-miniapp-card-icon { font-size: 14px; }
+
+/* 好友匹配结果入口 */
+.claw-match-friend-result-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.claw-match-friend-result-entry:active { transform: scale(0.98); }
+
+.claw-match-friend-result-entry-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.claw-match-friend-result-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #f0f7ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.claw-match-friend-result-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--td-text-color-primary, #1a1a1a);
+}
+
+.claw-match-friend-result-score {
+  font-size: 12px;
+  color: var(--td-text-color-secondary, #666);
+  margin-top: 2px;
+}
+
+.claw-match-friend-result-score strong {
+  color: #00a870;
+  font-size: 14px;
+}
+
+/* ========================================
+   好友匹配详情 (FriendMatchDetail)
+   ======================================== */
+.claw-fmd {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #f5f6fa;
+}
+
+.claw-fmd-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px 20px;
+}
+
+.claw-fmd-hero {
+  position: relative;
+  margin: 0 -16px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.claw-fmd-hero-bg {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #0a1628 0%, #1a2a4a 70%, #0e2a5c 100%);
+}
+
+.claw-fmd-hero-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 20px 28px;
+}
+
+.claw-fmd-avatars {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.claw-fmd-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+}
+
+.claw-fmd-avatar--me {
+  background: linear-gradient(135deg, #0052d9, #3d7ff7);
+}
+
+.claw-fmd-avatar--friend {
+  background: linear-gradient(135deg, #ff6b35, #ff9a56);
+}
+
+.claw-fmd-vs {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.claw-fmd-names {
+  display: flex;
+  gap: 60px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 16px;
+}
+
+.claw-fmd-ring-wrap {
+  position: relative;
+  width: 128px;
+  height: 128px;
+}
+
+.claw-fmd-ring-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.claw-fmd-ring-num {
+  font-size: 36px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.claw-fmd-ring-pct {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 8px;
+}
+
+.claw-fmd-verdict {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 8px;
+}
+
+/* 虾虾评语 */
+.claw-fmd-claw-comment {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.claw-fmd-claw-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ff6b35, #ff9a56);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.claw-fmd-claw-text {
+  font-size: 14px;
+  color: var(--td-text-color-primary, #1a1a1a);
+  line-height: 1.6;
+  padding-top: 6px;
+}
+
+/* 维度分析 */
+.claw-fmd-dims {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.claw-fmd-dim-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.claw-fmd-dim-icon { font-size: 16px; }
+
+.claw-fmd-dim-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--td-text-color-primary, #1a1a1a);
+  flex: 1;
+}
+
+.claw-fmd-dim-score {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.claw-fmd-dim-bar-bg {
+  height: 6px;
+  background: #f0f0f0;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.claw-fmd-dim-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.8s ease;
+}
+
+.claw-fmd-dim-desc {
+  font-size: 12px;
+  color: var(--td-text-color-secondary, #666);
+  line-height: 1.5;
+}
+
+.claw-fmd-summary {
+  font-size: 14px;
+  color: var(--td-text-color-primary, #333);
+  line-height: 1.8;
+  text-align: justify;
+}
+
+.claw-fmd-share-section {
+  padding: 16px 0;
+}
+
+.claw-fmd-share-hint {
+  text-align: center;
+  font-size: 12px;
+  color: var(--td-text-color-placeholder, #999);
+  margin-top: 8px;
+}
+
+/* ========================================
+   全局分享 Toast
+   ======================================== */
+.claw-share-toast {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  animation: claw-toast-in 0.3s ease;
+}
+
+.claw-share-toast-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+@keyframes claw-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* ========================================
+   响应式微调
+   ======================================== */
+@media (max-width: 375px) {
+  .claw-tc-header-content { padding: 16px 16px 32px; }
+  .claw-tc-shrimp-avatar { width: 48px; height: 48px; }
+  .claw-tc-shrimp-name { font-size: 18px; }
+  .claw-stat-value { font-size: 20px; }
+  .claw-chat-msg-col { max-width: 240px; }
+}

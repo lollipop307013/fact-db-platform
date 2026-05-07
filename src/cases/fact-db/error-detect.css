@@ -1,0 +1,71 @@
+/* ===== 分步执行卡片 ===== */
+.ed-section-subtitle {
+  font-size: 13px;
+  color: var(--td-text-color-placeholder);
+  margin-bottom: 16px;
+}
+
+.ed-step-cards {
+  display: flex;
+  gap: 16px;
+}
+
+.ed-step-card {
+  flex: 1;
+  border: 1px solid var(--td-border-level-1-color);
+  border-radius: 10px;
+  padding: 20px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.ed-step-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.ed-step-card--done {
+  border-color: var(--td-brand-color);
+}
+
+.ed-step-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.ed-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--td-brand-color-light);
+  color: var(--td-brand-color);
+  font-weight: 600;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.ed-step-card--done .ed-step-num {
+  background: var(--td-brand-color);
+  color: #fff;
+}
+
+.ed-step-card-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+  line-height: 1.4;
+}
+
+.ed-step-card-desc {
+  font-size: 13px;
+  color: var(--td-text-color-placeholder);
+}
+
+.ed-step-card-model-label {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  margin-bottom: 6px;
+}

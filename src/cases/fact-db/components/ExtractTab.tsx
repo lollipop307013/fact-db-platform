@@ -1,0 +1,2550 @@
+import React, { useState } from "react";
+import {
+  Form, Textarea, Button, Radio, Loading, Tag, Space, Select,
+  MessagePlugin, Tooltip, DialogPlugin, Dialog, Drawer, Input, DatePicker,
+  Checkbox,
+} from "tdesign-react";
+import {
+  HelpCircleIcon, CheckIcon, CloseIcon, ChevronDownIcon, ChevronRightIcon, AddIcon,
+  AttachIcon, FileIcon, FileExcelIcon, FilePdfIcon, FileWordIcon,
+} from "tdesign-icons-react";
+import { mockEntities, mockEvents } from "../mock";
+
+const { FormItem } = Form;
+
+const entityOptions = mockEntities.map((e) => ({ label: `[${e.id}] ${e.title}`, value: e.title }));
+const eventOptions  = mockEvents.map((e)  => ({ label: `[${e.id}] ${e.name}`,  value: e.name }));
+
+// ─── 类型 ─────────────────────────────────────────────────────────────────────
+interface ExtractedFact {
+  factId: string;
+  content: string;
+  // ① 实体匹配
+  entities: string[];                 // 建议关联的已有实体
+  newEntities: NewEntitySuggestion[]; // 建议新增的新名词（结构化：名称/描述/标签）
+  // ② 事件匹配
+  events: string[];          // 建议关联的已有事件
+  newEvents: NewEventSuggestion[]; // 建议新增的事件（带详情）
+  // ③ 冲突检测（与已有事实在描述上互斥）
+  conflict: ConflictRef | null;
+  // ④ 重复检测（与已有事实表达同一信息）
+  duplicate: DuplicateRef | null;
+  // ⑤ 事实有效时间
+  startTime: string;
+  endTime: string;
+  timeDesc: string;
+  status: "待审核" | "已审核" | "已拒绝";
+  /** 操作日志：缓冲池阶段的所有动作流水（创建 / 编辑 / 通过 / 拒绝 / 撤回 等） */
+  logs: BufferLog[];
+}
+
+/** 缓冲池条目操作日志 */
+interface BufferLog {
+  id: number;
+  time: string;
+  operator: string;
+  action: "创建" | "编辑" | "通过" | "拒绝" | "撤回" | "实体丢弃" | "实体恢复" | "事件丢弃" | "事件恢复" | "冲突解除" | "重复解除";
+  detail: string;
+}
+
+/** 冲突事实引用（指向已入库的事实，用于对比） */
+interface ConflictRef {
+  factId: string;       // 已有事实的 ID（带前缀，如 "ID:37957"）
+  factContent: string;  // 已有事实的内容
+  reason: string;       // 冲突说明
+}
+
+/** 重复事实引用（同义/近义表达） */
+interface DuplicateRef {
+  factId: string;
+  factContent: string;
+  similarity: number;   // 0~1，相似度
+}
+
+/** 建议新增的实体（与"添加实体"原型表单字段对齐）
+ *  decision: keep=保留(默认入库) | discard=丢弃(置灰划线，可恢复)
+ */
+interface NewEntitySuggestion {
+  name: string;
+  description: string;
+  tags: string[];
+  decision: "keep" | "discard";
+}
+
+/** 建议新增的事件
+ *  decision 只有两种结果：
+ *    keep    = 保留（默认，事实入库时随之新增进事件库）
+ *    discard = 丢弃（不入库，置灰划线展示，可恢复）
+ */
+interface NewEventSuggestion {
+  name: string;
+  eventType: string;
+  startTime: string;
+  endTime: string;
+  timeDesc: string;
+  description: string;
+  tags: string[];
+  decision: "keep" | "discard";
+}
+
+interface ExtractBatch {
+  batchId: string;
+  extractedAt: string;
+  /** 提取操作人（提取结果所有人共享可见，此字段用于追溯+筛选） */
+  extractor: string;
+  sourceText: string;
+  batchLabel: string;
+  model: string;
+  mode: string;
+  facts: ExtractedFact[];
+  expanded: boolean;
+  /** 是否已归档：true=已归档区，false=待处理区 */
+  archived: boolean;
+  /** 归档原因：exported（已导出为 Excel）/ committed（已批量入库）/ manual（手动归档） */
+  archiveReason?: "exported" | "committed" | "manual";
+  /** 归档时间 */
+  archivedAt?: string;
+  /** 归档操作人 */
+  archivedBy?: string;
+  /** 导出时间（如导出过 Excel） */
+  exportedAt?: string;
+}
+
+/** 文件解析得到的候选片段（供用户勾选后批量提取） */
+interface FileSegment {
+  /** 片段唯一 id */
+  id: string;
+  /** 章节 / 行号 / 段落标记，例如 "第 3 章 / 1.2" 或 "第 15 行" */
+  location: string;
+  /** 片段文本（前 100 字预览，详情可悬浮看全） */
+  text: string;
+  /** 是否勾选（默认全选，用户可取消） */
+  selected: boolean;
+}
+
+/** 当前登录用户（demo 中固定，实际接入时由登录态注入） */
+const CURRENT_USER = "yzhinan(南勇志)";
+
+/** 把字符串数组快速转成 NewEntitySuggestion 数组（mock 用） */
+const mkNE = (names: string[]): NewEntitySuggestion[] =>
+  names.map((n) => ({ name: n, description: "", tags: [], decision: "keep" }));
+
+/** 当前时间字符串（用于日志） */
+const nowStr = () => new Date().toLocaleString("zh-CN").replace(/\//g, "-");
+
+/** 创建一条日志 */
+const mkLog = (action: BufferLog["action"], detail: string, operator = CURRENT_USER): BufferLog => ({
+  id: Date.now() + Math.floor(Math.random() * 1000),
+  time: nowStr(),
+  operator,
+  action,
+  detail,
+});
+
+/** 创建批次时给每条 fact 的初始日志 */
+const initLogs = (operator: string, time: string): BufferLog[] => [
+  { id: Math.floor(Math.random() * 100000), time, operator, action: "创建", detail: "AI 提取入缓冲池" },
+];
+
+// ─── 冲突/重复检测 mock 库 ─────────────────────────────────────────────────────
+/** 已入库事实的"指纹库"。编辑保存后会重新基于关键词匹配，模拟"重新查冲突"。 */
+interface KnownFact {
+  factId: string;
+  content: string;
+  /** 触发"冲突"的关键词组合（必须全部命中） */
+  conflictKeywords: string[];
+  /** 冲突说明 */
+  conflictReason: string;
+  /** 触发"重复"的关键词组合（必须全部命中） */
+  duplicateKeywords: string[];
+  /** 重复相似度示例值 */
+  similarity: number;
+}
+
+const KNOWN_FACTS: KnownFact[] = [
+  {
+    factId: "ID:37957",
+    content: "英雄维斯的剃刀藤蔓落地后处于隐形状态，接触到敌人后自动触发，对范围内敌人造成持续伤害与减速效果。",
+    conflictKeywords: ["剃刀藤蔓", "手动激活"],
+    conflictReason: "已有事实[ID:37957]描述剃刀藤蔓落地后需手动激活，但已审核事实[ID:10088]中描述该技能为自动触发。两者在激活方式上存在直接冲突。",
+    duplicateKeywords: [],
+    similarity: 0,
+  },
+  {
+    factId: "ID:42010",
+    content: "在游戏地图日落之城的A点，英雄维斯可以将技能剃刀藤蔓投掷在A大道拐角、A小出口墙面等位置，利用反弹将陷阱布置到视野盲区，配合弧光玫瑰对进点敌人形成控制。",
+    conflictKeywords: [],
+    conflictReason: "",
+    duplicateKeywords: ["日落之城", "A点", "剃刀藤蔓", "弧光玫瑰"],
+    similarity: 0.86,
+  },
+];
+
+/** 重新校验：基于事实内容关键词匹配，模拟后端冲突/重复查询 */
+function recheckConflict(content: string): { conflict: ConflictRef | null; duplicate: DuplicateRef | null } {
+  let conflict: ConflictRef | null = null;
+  let duplicate: DuplicateRef | null = null;
+  for (const k of KNOWN_FACTS) {
+    if (!conflict && k.conflictKeywords.length > 0 && k.conflictKeywords.every((kw) => content.includes(kw))) {
+      conflict = { factId: k.factId, factContent: k.content, reason: k.conflictReason };
+    }
+    if (!duplicate && k.duplicateKeywords.length > 0 && k.duplicateKeywords.every((kw) => content.includes(kw))) {
+      duplicate = { factId: k.factId, factContent: k.content, similarity: k.similarity };
+    }
+  }
+  return { conflict, duplicate };
+}
+
+/** 极简字符级 diff：返回带类型的片段数组（基于 LCS） */
+type DiffSeg = { type: "equal" | "del" | "ins"; text: string };
+function charDiff(oldStr: string, newStr: string): DiffSeg[] {
+  const m = oldStr.length, n = newStr.length;
+  // dp[i][j] = LCS length of oldStr[0..i] vs newStr[0..j]
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = oldStr[i - 1] === newStr[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  const segs: DiffSeg[] = [];
+  let i = m, j = n;
+  while (i > 0 && j > 0) {
+    if (oldStr[i - 1] === newStr[j - 1]) {
+      segs.unshift({ type: "equal", text: oldStr[i - 1] });
+      i--; j--;
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      segs.unshift({ type: "del", text: oldStr[i - 1] });
+      i--;
+    } else {
+      segs.unshift({ type: "ins", text: newStr[j - 1] });
+      j--;
+    }
+  }
+  while (i > 0) { segs.unshift({ type: "del", text: oldStr[i - 1] }); i--; }
+  while (j > 0) { segs.unshift({ type: "ins", text: newStr[j - 1] }); j--; }
+  // 合并相邻同类型
+  const merged: DiffSeg[] = [];
+  for (const s of segs) {
+    const last = merged[merged.length - 1];
+    if (last && last.type === s.type) last.text += s.text;
+    else merged.push({ ...s });
+  }
+  return merged;
+}
+
+// ─── mock 数据 ────────────────────────────────────────────────────────────────
+const mockBatches: ExtractBatch[] = [
+  {
+    batchId: "BATCH-20260506-0001",
+    extractedAt: "2026-05-06 09:30:00",
+    extractor: CURRENT_USER,
+    model: "deepseek-v3-2-251201",
+    mode: "多段提取",
+    sourceText: "在游戏地图'深海明珠'的A点，英雄'维斯'可以使用其基础技能'弧光玫瑰'进行防守。弧光玫瑰可部署在墙面或地面，部署后处于隐形状态，再次激活时可致盲所有注视该墙面的敌人，并会提供闪光命中的提示音。该技能可回收并重新部署，且通过辅助射击键可将玫瑰部署在墙体另一侧实现隔墙闪光。在防守深海明珠A点时，进攻方通常从A主门（经A大道）或水下路线推进。维斯可在A包点内侧墙面、A主门出口墙体背面或水下出口拐角等位置部署弧光玫瑰。当通过声音或道具信息判断敌人即将进点时，激活玫瑰致盲从A主门或水下拉出的敌人，随后可根据提示音判断命中人数，协同队友从掩体后拉出进行反清击杀，以打乱敌方进攻节奏。若敌方暂缓进攻，维斯可以回收玫瑰并重新部署到其他位置以灵活应对。\n\n在游戏地图日落之城的B点，英雄维斯的技能剃刀藤蔓是一个可投掷的陷阱装置，落地后隐形，可手动激活，激活后从地面伸出藤蔓，对范围内移动的敌人造成持续伤害与减速效果，并伴随较大声响；该技能可通过墙面反弹进行布置。\n\n在游戏地图日落之城的A点，英雄维斯的技能剃刀藤蔓是一个可投掷的陷阱装置，落地后隐形，可手动激活，激活后从地面伸出藤蔓，对范围内移动的敌人造成持续伤害与减速效果，并伴随较大声响。该技能可通过墙面反弹进行布置。",
+    batchLabel: "在游戏地图'深海明珠'的A点，英雄'维斯'可以使用其基础技能'弧光玫瑰'进行防守…",
+    expanded: true,
+    archived: false,
+    facts: [
+      {
+        factId: "f_001_1",
+        content: "在游戏地图'深海明珠'的A点，英雄'维斯'可以使用其基础技能'弧光玫瑰'进行防守。弧光玫瑰可部署在墙面或地面，部署后处于隐形状态，再次激活时可致盲所有注视该墙面的敌人，并会提供闪光命中的提示音。该技能可回收并重新部署，且通过辅助射击键可将玫瑰部署在墙体另一侧实现隔墙闪光。在防守深海明珠A点时，进攻方通常从A主门（经A大道）或水下路线推进。维斯可在A包点内侧墙面、A主门出口墙体背面或水下出口拐角等位置部署弧光玫瑰。当通过声音或道具信息判断敌人即将进点时，激活玫瑰致盲从A主门或水下拉出的敌人，随后可根据提示音判断命中人数，协同队友从掩体后拉出进行反清击杀，以打乱敌方进攻节奏。若敌方暂缓进攻，维斯可以回收玫瑰并重新部署到其他位置以灵活应对。",
+        entities: ["维斯", "弧光玫瑰", "深海明珠", "A点", "A主门", "A大道", "技能", "道具", "陷阱", "隐形"],
+        newEntities: mkNE(["A包点", "水下路线"]),
+        events: [],
+        newEvents: [],
+        startTime: "",
+        endTime: "",
+        timeDesc: "",
+        conflict: null,
+        duplicate: null,
+        status: "待审核",
+        logs: initLogs("yzhinan(南勇志)", "2026-05-06 09:30:00"),
+      },
+      {
+        factId: "f_001_2",
+        content: "在游戏地图日落之城的B点，英雄维斯的技能剃刀藤蔓是一个可投掷的陷阱装置，落地后隐形，可手动激活，激活后从地面伸出藤蔓，对范围内移动的敌人造成持续伤害与减速效果，并伴随较大声响；该技能可通过墙面反弹进行布置。在防守B点时，该技能可用于封锁B大道入口、B二楼楼梯口及中坡连接通道等进攻方必经之路，例如在B大道拐角墙壁、B二楼楼梯下方地面或中坡拐角处反弹投掷。当获得敌方进攻信息时，激活剃刀藤蔓可以打断敌方节奏，协同队友进行反清或调整站位。",
+        entities: ["维斯", "剃刀藤蔓", "日落之城", "B点", "B大道", "B二楼", "技能", "陷阱", "隐形", "减速"],
+        newEntities: mkNE(["中坡连接通道"]),
+        events: [],
+        newEvents: [],
+        startTime: "",
+        endTime: "",
+        timeDesc: "",
+        conflict: {
+          factId: "ID:37957",
+          factContent: "英雄维斯的剃刀藤蔓落地后处于隐形状态，接触到敌人后自动触发，对范围内敌人造成持续伤害与减速效果。",
+          reason: "已有事实[ID:37957]描述剃刀藤蔓落地后需手动激活，但已审核事实[ID:10088]中描述该技能为自动触发。两者在激活方式上存在直接冲突。",
+        },
+        duplicate: null,
+        status: "待审核",
+        logs: initLogs("yzhinan(南勇志)", "2026-05-06 09:30:00"),
+      },
+      {
+        factId: "f_001_3",
+        content: "在游戏地图日落之城的A点，英雄维斯的技能剃刀藤蔓是一个可投掷的陷阱装置，落地后隐形，可手动激活，激活后从地面伸出藤蔓，对范围内移动的敌人造成持续伤害与减速效果，并伴随较大声响。该技能可通过墙面反弹进行布置。在防守A点时，维斯可将剃刀藤蔓投掷在A大道拐角墙面、A小出口墙壁或A包点掩体后等关键位置，利用反弹将陷阱布置在视野盲区。当听到敌方道具声或脚步声时激活藤蔓，可以封锁关键通道，迫使敌人减速或承受伤害，打乱其进攻节奏。陷阱触发后，防守方可利用减速效果架枪反清，或拖延敌方进点时间等待队友回防。该技能可与维斯的另一技能弧光玫瑰配合，对进点敌人形成控制链。",
+        entities: ["维斯", "剃刀藤蔓", "弧光玫瑰", "日落之城", "A点", "A大道", "A小出口", "技能", "陷阱", "隐形", "减速"],
+        newEntities: mkNE(["A包点掩体", "视野盲区", "控制链"]),
+        events: [],
+        newEvents: [],
+        startTime: "",
+        endTime: "",
+        timeDesc: "",
+        conflict: null,
+        duplicate: {
+          factId: "ID:42010",
+          factContent: "在游戏地图日落之城的A点，英雄维斯可以将技能剃刀藤蔓投掷在A大道拐角、A小出口墙面等位置，利用反弹将陷阱布置到视野盲区，配合弧光玫瑰对进点敌人形成控制。",
+          similarity: 0.86,
+        },
+        status: "待审核",
+        logs: initLogs("yzhinan(南勇志)", "2026-05-06 09:30:00"),
+      },
+      {
+        factId: "f_001_4",
+        content: "2026年4月23日至5月7日，游戏限时活动「深渊突袭季」开启，特工维斯获得专属活动皮肤「暗影执行者」，活动期间完成维斯英雄挑战任务可额外获得活动积分，积分可兑换限定喷漆及玩家卡。此外，「深海明珠」地图在本次活动期间加入竞技轮换池。",
+        entities: ["维斯", "深海明珠", "英雄挑战任务", "积分"],
+        newEntities: [
+          { name: "暗影执行者", description: "维斯专属活动皮肤，仅在「深渊突袭季」期间获得", tags: ["皮肤", "限定"], decision: "keep" },
+          { name: "活动积分", description: "深渊突袭季期间通过完成英雄挑战任务获得，可兑换限定道具", tags: ["积分", "活动"], decision: "keep" },
+          { name: "限定喷漆", description: "活动积分可兑换的喷漆道具", tags: ["道具", "限定"], decision: "keep" },
+          { name: "玩家卡", description: "活动积分可兑换的玩家卡道具", tags: ["道具"], decision: "keep" },
+        ],
+        events: [],
+        newEvents: [
+          {
+            name: "深渊突袭季",
+            eventType: "活动",
+            startTime: "2026-04-23 00:00:00",
+            endTime:   "2026-05-07 23:59:59",
+            timeDesc:  "活动限时，结束后皮肤不再获得",
+            description: "维斯获得专属皮肤「暗影执行者」，完成英雄挑战任务可获活动积分，积分可兑换限定喷漆及玩家卡；深海明珠地图加入竞技轮换池",
+            tags: ["限时活动", "皮肤", "积分"],
+            decision: "keep",
+          },
+        ],
+        startTime: "2026-04-23 00:00:00",
+        endTime:   "2026-05-07 23:59:59",
+        timeDesc:  "活动限时，结束后皮肤不再获得",
+        conflict: null,
+        duplicate: null,
+        status: "待审核",
+        logs: initLogs("yzhinan(南勇志)", "2026-05-06 09:30:00"),
+      },
+    ],
+  },
+  {
+    batchId: "BATCH-20260506-0002",
+    extractedAt: "2026-05-06 14:20:00",
+    extractor: "zhaoweilin(林兆伟)",
+    model: "deepseek-v3-2-251201",
+    mode: "单段提取",
+    sourceText: "在游戏地图「裂隙」C点，英雄「赛奇」可以使用其终极技能「复苏」对倒地队友进行复活，复苏过程中赛奇与目标队友均处于无敌状态。该技能冷却时间长，通常用于关键回合的翻盘。",
+    batchLabel: "在游戏地图「裂隙」C点，英雄「赛奇」可以使用其终极技能「复苏」对倒地队友…",
+    expanded: true,
+    archived: false,
+    facts: [
+      {
+        factId: "f_002_1",
+        content: "在游戏地图「裂隙」C点，英雄「赛奇」可以使用其终极技能「复苏」对倒地队友进行复活，复苏过程中赛奇与目标队友均处于无敌状态。该技能冷却时间长，通常用于关键回合的翻盘。",
+        entities: ["赛奇", "复苏", "裂隙", "C点", "终极技能"],
+        newEntities: [],
+        events: [],
+        newEvents: [],
+        startTime: "",
+        endTime: "",
+        timeDesc: "",
+        conflict: null,
+        duplicate: null,
+        status: "待审核",
+        logs: initLogs("zhaoweilin(林兆伟)", "2026-05-06 14:20:00"),
+      },
+    ],
+  },
+  // 已归档批次（演示用：已导出为 Excel）
+  {
+    batchId: "BATCH-20260505-0003",
+    extractedAt: "2026-05-05 16:08:22",
+    extractor: CURRENT_USER,
+    model: "deepseek-v3-2-251201",
+    mode: "多段提取",
+    sourceText: "在游戏地图断章城的 B 点，英雄绿松石可以使用技能能量充能进行布防。能量充能可在落地后形成一个能量场，对范围内敌人造成伤害…",
+    batchLabel: "在游戏地图断章城的 B 点，英雄绿松石可以使用技能能量充能进行布防…",
+    expanded: false,
+    archived: true,
+    archiveReason: "exported",
+    archivedAt: "2026-05-05 17:30:11",
+    archivedBy: CURRENT_USER,
+    exportedAt: "2026-05-05 17:30:11",
+    facts: [
+      {
+        factId: "f_arch_1",
+        content: "在游戏地图断章城的 B 点，英雄绿松石可以使用技能能量充能进行布防。能量充能可在落地后形成一个能量场，对范围内敌人造成伤害。",
+        entities: ["绿松石", "能量充能", "断章城", "B点"],
+        newEntities: [],
+        events: [],
+        newEvents: [],
+        startTime: "", endTime: "", timeDesc: "",
+        conflict: null, duplicate: null,
+        status: "待审核",
+        logs: [
+          { id: 1, time: "2026-05-05 16:08:22", operator: CURRENT_USER, action: "创建", detail: "AI 提取入审核区" },
+          { id: 2, time: "2026-05-05 17:30:11", operator: CURRENT_USER, action: "编辑", detail: "导出为 Excel（fact-export-20260505.xlsx）" },
+        ],
+      },
+      {
+        factId: "f_arch_2",
+        content: "绿松石的另一技能能量护盾可生成一道临时屏障，阻挡子弹与技能投射物，但持续时间短。",
+        entities: ["绿松石", "能量护盾"],
+        newEntities: [],
+        events: [],
+        newEvents: [],
+        startTime: "", endTime: "", timeDesc: "",
+        conflict: null, duplicate: null,
+        status: "待审核",
+        logs: [
+          { id: 1, time: "2026-05-05 16:08:22", operator: CURRENT_USER, action: "创建", detail: "AI 提取入审核区" },
+          { id: 2, time: "2026-05-05 17:30:11", operator: CURRENT_USER, action: "编辑", detail: "导出为 Excel（fact-export-20260505.xlsx）" },
+        ],
+      },
+    ],
+  },
+];
+
+// ─── 主组件 ────────────────────────────────────────────────────────────────────
+export default function ExtractTab() {
+  const [text, setText] = useState("");
+  const [mode, setMode] = useState("single");
+  const [model, setModel] = useState("deepseek-v3-2-251201");
+  const [loading, setLoading] = useState(false);
+  const [batches, setBatches] = useState<ExtractBatch[]>(mockBatches);
+  /** 提取人筛选：all=全部（共享），mine=只看自己的 */
+  const [scope, setScope] = useState<"all" | "mine">("all");
+  /** 输入方式：text=文本粘贴，file=文件导入 */
+  const [inputMode, setInputMode] = useState<"text" | "file">("text");
+  /** 文件导入态 */
+  const [file, setFile] = useState<File | null>(null);
+  const [parseStatus, setParseStatus] = useState<"idle" | "parsing" | "parsed" | "error">("idle");
+  const [parseError, setParseError] = useState("");
+  const [segments, setSegments] = useState<FileSegment[]>([]);
+  /** 视图分区：pending=待处理，archived=已归档 */
+  const [view, setView] = useState<"pending" | "archived">("pending");
+  /** 多选的事实 ID 集合（跨批次累加） */
+  const [selectedFactIds, setSelectedFactIds] = useState<Set<string>>(new Set());
+
+  // 1. 按提取人筛选
+  const scopedBatches = scope === "mine"
+    ? batches.filter((b) => b.extractor === CURRENT_USER)
+    : batches;
+
+  // 2. 按归档状态切换池子
+  const visibleBatches = scopedBatches.filter((b) => view === "pending" ? !b.archived : b.archived);
+
+  // 3. 全局统计（仅按提取人筛选，不分池）
+  const pendingPoolCount  = scopedBatches.filter((b) => !b.archived).reduce((a, b) => a + b.facts.length, 0);
+  const archivedPoolCount = scopedBatches.filter((b) =>  b.archived).reduce((a, b) => a + b.facts.length, 0);
+
+  // 4. 当前视图的统计
+  const pendingCount  = visibleBatches.reduce((a, b) => a + b.facts.filter((f) => f.status === "待审核").length, 0);
+  const approvedCount = visibleBatches.reduce((a, b) => a + b.facts.filter((f) => f.status === "已审核").length, 0);
+  const totalCount    = visibleBatches.reduce((a, b) => a + b.facts.length, 0);
+
+  // 5. 多选相关
+  const selectedCount = selectedFactIds.size;
+  const clearSelection = () => setSelectedFactIds(new Set());
+  const toggleSelectFact = (factId: string) => {
+    setSelectedFactIds((prev) => {
+      const next = new Set(prev);
+      next.has(factId) ? next.delete(factId) : next.add(factId);
+      return next;
+    });
+  };
+  /** 整批切换选中：若批次内所有条目全已选中则全取消，否则全选中 */
+  const toggleSelectBatch = (batch: ExtractBatch) => {
+    const batchFactIds = batch.facts.map((f) => f.factId);
+    const allSelected = batchFactIds.every((id) => selectedFactIds.has(id));
+    setSelectedFactIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        batchFactIds.forEach((id) => next.delete(id));
+      } else {
+        batchFactIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+  /** 全选/取消全选当前视图所有 facts */
+  const allVisibleFactIds = visibleBatches.flatMap((b) => b.facts.map((f) => f.factId));
+  const allVisibleSelected = allVisibleFactIds.length > 0 && allVisibleFactIds.every((id) => selectedFactIds.has(id));
+  const someVisibleSelected = allVisibleFactIds.some((id) => selectedFactIds.has(id));
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      clearSelection();
+    } else {
+      setSelectedFactIds(new Set(allVisibleFactIds));
+    }
+  };
+  // 视图切换时清空选择
+  React.useEffect(() => { clearSelection(); }, [view, scope]);
+
+
+  const handleExtract = () => {
+    if (!text.trim()) { MessagePlugin.warning("请输入文本内容"); return; }
+    setLoading(true);
+    setTimeout(() => {
+      setLoading(false);
+      const label = text.slice(0, 40) + (text.length > 40 ? "…" : "");
+      // 业务编号：BATCH-{YYYYMMDD}-{当日 4 位序号}
+      const today = new Date();
+      const ymd = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      const seq = String(batches.filter((b) => b.batchId.includes(ymd)).length + 1).padStart(4, "0");
+      const newBatchId = `BATCH-${ymd}-${seq}`;
+      const newBatch: ExtractBatch = {
+        batchId: newBatchId,
+        extractedAt: new Date().toLocaleString("zh-CN").replace(/\//g, "-"),
+        extractor: CURRENT_USER,
+        sourceText: text,
+        batchLabel: label,
+        model,
+        mode: mode === "single" ? "单段提取" : "多段提取",
+        expanded: true,
+        archived: false,
+        facts: mode === "single"
+          ? [{ factId: `f_${Date.now()}_1`, content: text.trim(), entities: ["霓虹", "高速通道"], newEntities: [], events: [], newEvents: [], startTime: "", endTime: "", timeDesc: "", conflict: null, duplicate: null, status: "待审核", logs: initLogs(CURRENT_USER, nowStr()) }]
+          : [
+              { factId: `f_${Date.now()}_1`, content: text.trim().split("\n")[0] || text.trim(), entities: ["霓虹"], newEntities: [], events: [], newEvents: [], startTime: "", endTime: "", timeDesc: "", conflict: null, duplicate: null, status: "待审核", logs: initLogs(CURRENT_USER, nowStr()) },
+              { factId: `f_${Date.now()}_2`, content: text.trim().split("\n")[1] || "（第二段提取结果）", entities: ["勇士学院"], newEntities: mkNE(["新实体示例"]), events: [], newEvents: [], startTime: "", endTime: "", timeDesc: "", conflict: null, duplicate: null, status: "待审核", logs: initLogs(CURRENT_USER, nowStr()) },
+            ],
+      };
+      setBatches((prev) => [newBatch, ...prev]);
+      setText("");
+      MessagePlugin.success(`提取完成（${newBatchId}），生成 ${newBatch.facts.length} 条事实，已进入右侧审核区`);
+    }, 2000);
+  };
+
+  /** 选择文件后触发 mock 解析 */
+  const handleFileSelect = (f: File) => {
+    setFile(f);
+    setParseStatus("parsing");
+    setParseError("");
+    setSegments([]);
+
+    // mock：基于文件类型生成不同的解析结果
+    setTimeout(() => {
+      const ext = f.name.split(".").pop()?.toLowerCase() || "";
+      const isTable = ext === "xlsx" || ext === "csv";
+      const sizeMB = f.size / 1024 / 1024;
+
+      // 模拟解析失败：> 20MB 或加密 PDF（这里用文件名简单 mock）
+      if (sizeMB > 20) {
+        setParseStatus("error");
+        setParseError(`文件超过 20MB（${sizeMB.toFixed(2)}MB），请压缩或拆分后重试`);
+        return;
+      }
+      if (f.name.includes("encrypted")) {
+        setParseStatus("error");
+        setParseError("文件已加密，无法解析。请提供未加密版本");
+        return;
+      }
+
+      const segs: FileSegment[] = isTable
+        ? [
+            { id: "seg_1", location: "第 2 行（行情说明）",  text: "在游戏地图深海明珠的 A 点，特工维斯可以使用基础技能弧光玫瑰进行防守…", selected: true },
+            { id: "seg_2", location: "第 3 行（行情说明）",  text: "在游戏地图日落之城的 B 点，特工维斯的剃刀藤蔓是一个可投掷的陷阱装置…", selected: true },
+            { id: "seg_3", location: "第 4 行（活动详情）",  text: "限时活动「深渊突袭季」开启，参与活动的玩家可获得专属皮肤暗影执行者…", selected: true },
+          ]
+        : [
+            { id: "seg_1", location: "第 1 章 / 1.1 英雄概述",  text: "维斯是一名以战术控制见长的特工，擅长在防守回合通过预判敌方进攻路线进行布防…", selected: true },
+            { id: "seg_2", location: "第 1 章 / 1.2 技能机制", text: "弧光玫瑰：维斯的基础技能，可部署在墙面或地面，部署后处于隐形状态，再次激活时可致盲所有注视该墙面的敌人…", selected: true },
+            { id: "seg_3", location: "第 1 章 / 1.3 技能机制", text: "剃刀藤蔓：可投掷的陷阱装置，落地后隐形，可手动激活，激活后从地面伸出藤蔓，对范围内移动的敌人造成持续伤害与减速效果…", selected: true },
+            { id: "seg_4", location: "第 2 章 / 2.1 地图配合", text: "深海明珠地图 A 点防守时，建议在 A 主门、水下出口拐角等位置部署弧光玫瑰…", selected: true },
+            { id: "seg_5", location: "第 2 章 / 2.2 战术建议", text: "当通过声音或道具信息判断敌人即将进点时，激活玫瑰致盲，再协同队友从掩体后拉出反清击杀…", selected: true },
+          ];
+      setSegments(segs);
+      setParseStatus("parsed");
+      MessagePlugin.success(`文件解析完成，识别出 ${segs.length} 个候选片段`);
+    }, 1500);
+  };
+
+  /** 文件提取：把选中的片段一次性生成一个批次 */
+  const handleFileExtract = () => {
+    const picked = segments.filter((s) => s.selected);
+    if (picked.length === 0) { MessagePlugin.warning("请至少勾选 1 个候选片段"); return; }
+
+    setLoading(true);
+    setTimeout(() => {
+      setLoading(false);
+      const today = new Date();
+      const ymd = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      const seq = String(batches.filter((b) => b.batchId.includes(ymd)).length + 1).padStart(4, "0");
+      const newBatchId = `BATCH-${ymd}-${seq}`;
+
+      const ext = file?.name.split(".").pop()?.toLowerCase() || "";
+      const fileType = ext === "xlsx" || ext === "csv" ? "表格"
+        : ext === "pdf" ? "白皮书"
+        : ext === "docx" ? "白皮书"
+        : "文件";
+      const facts: ExtractedFact[] = picked.map((s, i) => ({
+        factId: `f_${Date.now()}_${i + 1}`,
+        content: s.text,
+        entities: ["维斯"],
+        newEntities: [],
+        events: [],
+        newEvents: [],
+        startTime: "", endTime: "", timeDesc: "",
+        conflict: null,
+        duplicate: null,
+        status: "待审核",
+        logs: initLogs(CURRENT_USER, nowStr()),
+      }));
+
+      const newBatch: ExtractBatch = {
+        batchId: newBatchId,
+        extractedAt: new Date().toLocaleString("zh-CN").replace(/\//g, "-"),
+        extractor: CURRENT_USER,
+        sourceText: `[来自文件] ${file?.name} · 解析得到 ${segments.length} 个候选片段，本次提取 ${picked.length} 个`,
+        batchLabel: `[${fileType}] ${file?.name}`,
+        model,
+        mode: "文件解析",
+        expanded: true,
+        archived: false,
+        facts,
+      };
+      setBatches((prev) => [newBatch, ...prev]);
+      // 清空文件态
+      setFile(null);
+      setSegments([]);
+      setParseStatus("idle");
+      MessagePlugin.success(`提取完成（${newBatchId}），生成 ${facts.length} 条事实，已进入右侧审核区`);
+    }, 2000);
+  };
+
+  /** 重置文件态 */
+  const handleFileReset = () => {
+    setFile(null);
+    setSegments([]);
+    setParseStatus("idle");
+    setParseError("");
+  };
+
+
+  /** 批量入库：把"已审核"条目入事实库，对应批次自动归档（commit 原因） */
+  const handleCommitAll = () => {
+    if (approvedCount === 0) { MessagePlugin.warning("暂无已审核条目可入库"); return; }
+    const scopeLabel = scope === "mine" ? "我提取的" : "当前视图";
+    const dlg = DialogPlugin.confirm({
+      header: "批量入库确认",
+      body: `将${scopeLabel} ${approvedCount} 条已审核事实入库（直接以「已审核」状态进入事实库）。\n相关批次将自动归档到「已归档」区，可随时查看历史。`,
+      theme: "warning",
+      confirmBtn: { content: "确认入库并归档", theme: "primary" },
+      onConfirm: () => {
+        const now = nowStr();
+        setBatches((prev) => prev.map((b) => {
+          // 只对当前可见、且包含已审核条目的批次操作
+          if (b.archived) return b;
+          if (scope === "mine" && b.extractor !== CURRENT_USER) return b;
+          if (!b.facts.some((f) => f.status === "已审核")) return b;
+          return {
+            ...b,
+            archived: true,
+            archiveReason: "committed",
+            archivedAt: now,
+            archivedBy: CURRENT_USER,
+            facts: b.facts.map((f) => f.status === "已审核"
+              ? { ...f, logs: [...f.logs, mkLog("通过", `批量入库 → 事实库（已审核）`)] }
+              : f),
+          };
+        }));
+        MessagePlugin.success(`${approvedCount} 条事实已入库，相关批次已归档`);
+        clearSelection();
+        dlg.destroy();
+      },
+      onCancel: () => dlg.destroy(),
+    });
+  };
+
+  /** 批量通过（多选）：仅对待审核条目生效，已标注的不影响 */
+  const handleBatchApprove = () => {
+    if (selectedCount === 0) { MessagePlugin.warning("请先勾选事实条目"); return; }
+    const ids = selectedFactIds;
+    let actualCount = 0;
+    setBatches((prev) => prev.map((b) => ({
+      ...b,
+      facts: b.facts.map((f) => {
+        if (!ids.has(f.factId) || f.status !== "待审核") return f;
+        actualCount++;
+        return { ...f, status: "已审核", logs: [...f.logs, mkLog("通过", "批量通过（多选）")] };
+      }),
+    })));
+    setTimeout(() => {
+      MessagePlugin.success(`已通过 ${actualCount} 条`);
+      clearSelection();
+    }, 0);
+  };
+
+  /** 批量拒绝（多选） */
+  const handleBatchReject = () => {
+    if (selectedCount === 0) { MessagePlugin.warning("请先勾选事实条目"); return; }
+    const ids = selectedFactIds;
+    let actualCount = 0;
+    setBatches((prev) => prev.map((b) => ({
+      ...b,
+      facts: b.facts.map((f) => {
+        if (!ids.has(f.factId) || f.status !== "待审核") return f;
+        actualCount++;
+        return { ...f, status: "已拒绝", logs: [...f.logs, mkLog("拒绝", "批量拒绝（多选）")] };
+      }),
+    })));
+    setTimeout(() => {
+      MessagePlugin.success(`已拒绝 ${actualCount} 条`);
+      clearSelection();
+    }, 0);
+  };
+
+  /** 批量删除（多选）：从缓冲池彻底移除选中条目，需二次确认 */
+  const handleBatchDelete = () => {
+    if (selectedCount === 0) { MessagePlugin.warning("请先勾选事实条目"); return; }
+    const ids = selectedFactIds;
+    const dlg = DialogPlugin.confirm({
+      header: "批量删除",
+      body: `确认从缓冲池删除选中的 ${selectedCount} 条事实？删除后不可恢复，建议优先使用「批量拒绝」留存记录。`,
+      theme: "danger",
+      confirmBtn: { content: `删除 ${selectedCount} 条`, theme: "danger" },
+      onConfirm: () => {
+        setBatches((prev) =>
+          prev.map((b) => ({ ...b, facts: b.facts.filter((f) => !ids.has(f.factId)) }))
+              .filter((b) => b.facts.length > 0)
+        );
+        MessagePlugin.success(`已删除 ${selectedCount} 条`);
+        clearSelection();
+        dlg.destroy();
+      },
+      onCancel: () => dlg.destroy(),
+    });
+  };
+
+  /** 导出 Excel：选中条目所在批次中「已审核」的条目导出，字段与事实库导入模板对齐，自动归档 */
+  const handleExport = () => {
+    if (selectedCount === 0) { MessagePlugin.warning("请先勾选事实条目"); return; }
+    // 找出选中条目涉及的批次
+    const involvedBatchIds = new Set<string>();
+    batches.forEach((b) => {
+      if (b.facts.some((f) => selectedFactIds.has(f.factId))) involvedBatchIds.add(b.batchId);
+    });
+    if (involvedBatchIds.size === 0) return;
+
+    // 统计：涉及批次中已审核的条目数（已拒绝自动跳过）
+    const involvedBatches = batches.filter((b) => involvedBatchIds.has(b.batchId));
+    const approvedFacts = involvedBatches.flatMap((b) => b.facts.filter((f) => f.status === "已审核"));
+    const rejectedCount = involvedBatches.flatMap((b) => b.facts.filter((f) => f.status === "已拒绝")).length;
+    const pendingCount  = involvedBatches.flatMap((b) => b.facts.filter((f) => f.status === "待审核")).length;
+
+    const dlg = DialogPlugin.confirm({
+      header: "导出为 Excel",
+      body: (
+        <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+          <div>涉及 <strong>{involvedBatchIds.size}</strong> 个批次，共 <strong>{involvedBatches.reduce((a, b) => a + b.facts.length, 0)}</strong> 条事实：</div>
+          <div style={{ margin: "6px 0 10px", paddingLeft: 8 }}>
+            <div>✅ <strong style={{ color: "var(--td-success-color)" }}>{approvedFacts.length} 条「已审核」</strong>将导出</div>
+            {rejectedCount > 0 && <div>✗ <strong style={{ color: "var(--td-text-color-placeholder)" }}>{rejectedCount} 条「已拒绝」</strong>自动跳过</div>}
+            {pendingCount  > 0 && <div>⏳ <strong style={{ color: "var(--td-warning-color)" }}>{pendingCount} 条「待审核」</strong>自动跳过</div>}
+          </div>
+          {approvedFacts.length === 0
+            ? <div style={{ color: "var(--td-error-color)", fontWeight: 500 }}>当前批次中无已审核条目，无法导出。</div>
+            : <div style={{ color: "var(--td-text-color-secondary)", fontSize: 12 }}>
+                导出格式与事实库导入模板相同，可直接导入已审核内容。<br />
+                导出后相关批次将自动归档，可随时取消归档恢复处理。
+              </div>
+          }
+        </div>
+      ) as any,
+      theme: approvedFacts.length === 0 ? "warning" : "info",
+      confirmBtn: approvedFacts.length === 0
+        ? { content: "知道了", theme: "primary" }
+        : { content: "确认导出并归档", theme: "primary" },
+      cancelBtn: approvedFacts.length === 0 ? false as any : { content: "取消", variant: "outline" },
+      onConfirm: () => {
+        if (approvedFacts.length === 0) { dlg.destroy(); return; }
+
+        // 生成符合事实库导入模板的 CSV（与 ImportDialog.handleDownloadTemplate 字段一致）
+        const headers = [
+          "id", "title", "content", "category", "sourceType",
+          "source", "sourceUrl", "sourceContent",
+          "startTime", "endTime", "timeDesc",
+          "relatedEntities", "relatedEvents", "conflictIds", "status",
+        ];
+        const rows: string[][] = [headers];
+        involvedBatches.forEach((b) => {
+          b.facts.filter((f) => f.status === "已审核").forEach((f) => {
+            rows.push([
+              "",                                                        // id（留空，入库时系统分配）
+              "",                                                        // title（缓冲池无标题字段，导入后人工补充）
+              f.content.replace(/\r?\n/g, " ").replace(/"/g, "\"\""),   // content
+              "",                                                        // category
+              "",                                                        // sourceType
+              b.extractor,                                               // source（用提取人作来源）
+              "",                                                        // sourceUrl
+              b.batchId,                                                 // sourceContent（存批次 ID，便于溯源）
+              f.startTime || "",                                         // startTime
+              f.endTime   || "",                                         // endTime
+              f.timeDesc  || "",                                         // timeDesc
+              f.entities.join(", "),                                     // relatedEntities（名称，导入时人工替换为 ID）
+              f.events.join(", "),                                       // relatedEvents
+              f.conflict ? f.conflict.factId : "",                       // conflictIds
+              "已审核",                                                  // status
+            ]);
+          });
+        });
+        const csv = rows.map((row) => row.map((c) => `"${c}"`).join(",")).join("\r\n");
+        const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `fact-export-${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        // 归档涉及的批次
+        const now = nowStr();
+        setBatches((prev) => prev.map((b) => {
+          if (!involvedBatchIds.has(b.batchId)) return b;
+          return {
+            ...b,
+            archived: true,
+            archiveReason: "exported",
+            archivedAt: now,
+            archivedBy: CURRENT_USER,
+            exportedAt: now,
+            facts: b.facts.map((f) => ({ ...f, logs: [...f.logs, mkLog("编辑", `导出为 Excel（${a.download}）`)] })),
+          };
+        }));
+        MessagePlugin.success(`已导出 ${approvedFacts.length} 条已审核事实，${involvedBatchIds.size} 个批次已自动归档`);
+        clearSelection();
+        dlg.destroy();
+      },
+      onCancel: () => dlg.destroy(),
+    });
+  };
+
+  /** 取消归档：把已归档批次恢复为待处理 */
+  const handleUnarchive = (batchId: string) => {
+    const dlg = DialogPlugin.confirm({
+      header: "恢复为待处理",
+      body: "该批次将从「已归档」恢复到「待处理」区，可继续审核操作。\n操作日志会保留归档历史。",
+      theme: "warning",
+      confirmBtn: { content: "确认恢复", theme: "primary" },
+      onConfirm: () => {
+        setBatches((prev) => prev.map((b) => {
+          if (b.batchId !== batchId) return b;
+          return {
+            ...b,
+            archived: false,
+            archiveReason: undefined,
+            archivedAt: undefined,
+            archivedBy: undefined,
+            facts: b.facts.map((f) => ({ ...f, logs: [...f.logs, mkLog("撤回", "从已归档恢复为待处理")] })),
+          };
+        }));
+        MessagePlugin.success("已恢复到待处理区");
+        dlg.destroy();
+      },
+      onCancel: () => dlg.destroy(),
+    });
+  };
+
+  /** 手动归档：把待处理批次主动归档（需所有条目都已标注） */
+  const handleManualArchive = (batchId: string) => {
+    const target = batches.find((b) => b.batchId === batchId);
+    if (!target) return;
+    const hasPending = target.facts.some((f) => f.status === "待审核");
+    if (hasPending) {
+      MessagePlugin.warning("批次内仍有待审核条目，请先处理完再归档");
+      return;
+    }
+    const dlg = DialogPlugin.confirm({
+      header: "归档批次",
+      body: "将该批次移入「已归档」区。可随时取消归档恢复。",
+      theme: "info",
+      confirmBtn: { content: "确认归档", theme: "primary" },
+      onConfirm: () => {
+        const now = nowStr();
+        setBatches((prev) => prev.map((b) => {
+          if (b.batchId !== batchId) return b;
+          return {
+            ...b,
+            archived: true,
+            archiveReason: "manual",
+            archivedAt: now,
+            archivedBy: CURRENT_USER,
+          };
+        }));
+        MessagePlugin.success("已归档");
+        dlg.destroy();
+      },
+      onCancel: () => dlg.destroy(),
+    });
+  };
+
+
+  return (
+    <div className="factdb-tab-content" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+
+      {/* ── 左侧：提取输入（flex:3）── */}
+      <div style={{ flex: 3, display: "flex", flexDirection: "column", gap: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>事实提取</div>
+
+        {/* 输入方式切换 */}
+        <Radio.Group
+          value={inputMode}
+          onChange={(v) => setInputMode(v as "text" | "file")}
+          variant="default-filled"
+          size="medium"
+          style={{ marginBottom: 12, alignSelf: "flex-start" }}
+        >
+          <Radio.Button value="text">📝 文本粘贴</Radio.Button>
+          <Radio.Button value="file">📎 文件导入</Radio.Button>
+        </Radio.Group>
+
+        {/* —— 模式 1：文本粘贴 —— */}
+        {inputMode === "text" && (
+          <>
+            <Textarea
+              placeholder="粘贴要提取事实的文本内容…"
+              value={text}
+              onChange={(v) => setText(v)}
+              autosize={{ minRows: 12 }}
+            />
+
+            {/* 配置区紧贴文本框下方 */}
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--td-text-color-secondary)", marginBottom: 5 }}>提取模式</div>
+                <Radio.Group value={mode} onChange={(v) => setMode(v as string)}>
+                  <Radio value="single">
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      单段提取
+                      <Tooltip content="将整段文本提取为一条事实">
+                        <HelpCircleIcon style={{ color: "var(--td-text-color-placeholder)", fontSize: 14, cursor: "pointer" }} />
+                      </Tooltip>
+                    </span>
+                  </Radio>
+                  <Radio value="multi" style={{ marginLeft: 16 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      多段提取
+                      <Tooltip content="自动拆分为多条事实，每条独立审核">
+                        <HelpCircleIcon style={{ color: "var(--td-text-color-placeholder)", fontSize: 14, cursor: "pointer" }} />
+                      </Tooltip>
+                    </span>
+                  </Radio>
+                </Radio.Group>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <Select
+                  filterable value={model} onChange={(v) => setModel(v as string)}
+                  options={[
+                    { label: "deepseek-v3-2-251201", value: "deepseek-v3-2-251201" },
+                    { label: "deepseek-v3-2-250101", value: "deepseek-v3-2-250101" },
+                    { label: "gpt-4o",               value: "gpt-4o" },
+                    { label: "claude-3.5-sonnet",    value: "claude-3.5-sonnet" },
+                  ]}
+                  style={{ flex: 1 }}
+                />
+                <Button theme="primary" loading={loading} onClick={handleExtract} style={{ flexShrink: 0 }}>
+                  提取事实
+                </Button>
+              </div>
+              {loading && (
+                <div style={{ fontSize: 12, color: "var(--td-brand-color)", display: "flex", alignItems: "center", gap: 6 }}>
+                  <Loading size="small" /> 提取中，结果将出现在右侧审核区…
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* —— 模式 2：文件导入 —— */}
+        {inputMode === "file" && (
+          <FileImportPanel
+            file={file}
+            parseStatus={parseStatus}
+            parseError={parseError}
+            segments={segments}
+            loading={loading}
+            model={model}
+            setModel={setModel}
+            setSegments={setSegments}
+            onFileSelect={handleFileSelect}
+            onExtract={handleFileExtract}
+            onReset={handleFileReset}
+          />
+        )}
+      </div>
+
+      {/* 分割线 */}
+      <div style={{ width: 1, background: "var(--td-component-stroke)", flexShrink: 0 }} />
+
+      {/* ── 右侧：审核区（flex:7）── */}
+      <div style={{ flex: 7, display: "flex", flexDirection: "column" }}>
+        {/* 顶部：标题 + 帮助 + 提取人筛选 */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexShrink: 0, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>提取结果审核</span>
+            <Tooltip
+              placement="bottom-left"
+              overlayStyle={{ maxWidth: 420 }}
+              content={
+                <div style={{ fontSize: 12, lineHeight: 1.8 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>使用说明</div>
+                  <div style={{ marginBottom: 6, color: "var(--td-text-color-placeholder)" }}>
+                    AI 提取的事实先进入「待处理」区暂存，审核通过后可批量入库或导出为 Excel。所有人共享可见。
+                  </div>
+                  <div style={{ fontWeight: 500, marginTop: 6 }}>使用步骤：</div>
+                  <ol style={{ margin: "4px 0 0 18px", padding: 0 }}>
+                    <li>左侧粘贴文本或上传文件，选择提取模式后点「提取事实」</li>
+                    <li>右侧「待处理」区按批次查看提取结果，逐条核对内容、关联实体/事件、冲突/重复</li>
+                    <li>可单条「通过/拒绝」，也可勾选多条批量操作；已标注的条目不会被批量动作覆盖</li>
+                    <li>「整批通过」= 把当前批次所有「待审核」条目改为已审核（已标注的不影响）</li>
+                    <li>三种归档方式：<br />· 批量入库 → 自动归档（事实直接入库为「已审核」状态）<br />· 导出为 Excel → 自动归档（标记「已导出」）<br />· 手动归档（适合放凉一段时间再回来看）</li>
+                    <li>「已归档」区可查历史，必要时取消归档恢复处理</li>
+                  </ol>
+                </div>
+              }
+            >
+              <HelpCircleIcon style={{ color: "var(--td-text-color-placeholder)", fontSize: 16, cursor: "help" }} />
+            </Tooltip>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Radio.Group value={scope} onChange={(v) => setScope(v as "all" | "mine")} variant="default-filled" size="small">
+              <Radio.Button value="all">全部</Radio.Button>
+              <Radio.Button value="mine">只看自己的</Radio.Button>
+            </Radio.Group>
+          </div>
+        </div>
+
+        {/* 顶级 Tab：待处理 / 已归档 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 10, borderBottom: "1px solid var(--td-component-stroke)", flexShrink: 0 }}>
+          <button
+            onClick={() => setView("pending")}
+            style={{
+              padding: "8px 16px",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontSize: 13,
+              fontWeight: view === "pending" ? 600 : 400,
+              color: view === "pending" ? "var(--td-brand-color)" : "var(--td-text-color-secondary)",
+              borderBottom: `2px solid ${view === "pending" ? "var(--td-brand-color)" : "transparent"}`,
+              marginBottom: -1,
+            }}
+          >
+            待处理 <span style={{ fontWeight: 400, marginLeft: 4 }}>({pendingPoolCount})</span>
+          </button>
+          <button
+            onClick={() => setView("archived")}
+            style={{
+              padding: "8px 16px",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontSize: 13,
+              fontWeight: view === "archived" ? 600 : 400,
+              color: view === "archived" ? "var(--td-brand-color)" : "var(--td-text-color-secondary)",
+              borderBottom: `2px solid ${view === "archived" ? "var(--td-brand-color)" : "transparent"}`,
+              marginBottom: -1,
+            }}
+          >
+            已归档 <span style={{ fontWeight: 400, marginLeft: 4 }}>({archivedPoolCount})</span>
+          </button>
+          <span style={{ flex: 1 }} />
+          {/* 当前视图统计 */}
+          {view === "pending" && totalCount > 0 && (
+            <span style={{ fontSize: 12, color: "var(--td-text-color-secondary)", paddingBottom: 8 }}>
+              共 <strong>{totalCount}</strong> 条 · 待审核 <strong style={{ color: "var(--td-warning-color)" }}>{pendingCount}</strong> · 已审核 <strong style={{ color: "var(--td-brand-color)" }}>{approvedCount}</strong>
+            </span>
+          )}
+        </div>
+
+        {/* 操作栏：未多选时显示全选入口 + 说明；多选时变为批量操作条 */}
+        {view === "pending" && visibleBatches.length > 0 && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "7px 12px",
+            background: selectedCount > 0 ? "rgba(0,82,217,0.06)" : "var(--td-bg-color-secondarycontainer)",
+            border: `1px solid ${selectedCount > 0 ? "rgba(0,82,217,0.2)" : "var(--td-component-stroke)"}`,
+            borderRadius: 6,
+            marginBottom: 10,
+            flexShrink: 0,
+            flexWrap: "wrap",
+            transition: "background .15s, border-color .15s",
+          }}>
+            {/* 全选 Checkbox */}
+            <Checkbox
+              checked={allVisibleSelected}
+              indeterminate={someVisibleSelected && !allVisibleSelected}
+              onChange={toggleSelectAll}
+            />
+            {selectedCount === 0 ? (
+              // 未多选：提示说明
+              <span style={{ fontSize: 12, color: "var(--td-text-color-placeholder)" }}>
+                勾选条目或批次头进行批量操作；也可对单条点「通过/拒绝/撤回」
+              </span>
+            ) : (
+              // 多选中：显示数量 + 操作按钮
+              <>
+                <span style={{ fontSize: 13, color: "var(--td-text-color-primary)" }}>
+                  已选 <strong style={{ color: "var(--td-brand-color)" }}>{selectedCount}</strong> 条
+                </span>
+                <span style={{ width: 1, height: 14, background: "var(--td-component-stroke)" }} />
+                <Button size="small" theme="success" variant="outline" icon={<CheckIcon />} onClick={handleBatchApprove}>批量通过</Button>
+                <Button size="small" theme="danger"  variant="outline" icon={<CloseIcon />} onClick={handleBatchReject}>批量拒绝</Button>
+                <Button size="small" theme="primary" variant="outline" icon={<AttachIcon />} onClick={handleExport}>导出为 Excel</Button>
+                <span style={{ width: 1, height: 14, background: "var(--td-component-stroke)" }} />
+                <Button size="small" variant="outline" theme="danger" onClick={handleBatchDelete}>批量删除</Button>
+              </>
+            )}
+            <span style={{ flex: 1 }} />
+            {selectedCount > 0 && (
+              <Button size="small" variant="text" onClick={clearSelection}>清空选择</Button>
+            )}
+          </div>
+        )}
+
+        {/* 顶部右侧固定操作（在操作栏之外仍可见） */}
+        {view === "pending" && approvedCount > 0 && selectedCount === 0 && (
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10, flexShrink: 0 }}>
+            <Button theme="primary" size="small" onClick={handleCommitAll}>
+              已审核全部入库 · 自动归档（{approvedCount}）
+            </Button>
+          </div>
+        )}
+
+        {/* 批次列表 */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {visibleBatches.length === 0 ? (
+            <div style={{ padding: "48px 0", textAlign: "center", color: "var(--td-text-color-placeholder)", fontSize: 13 }}>
+              {view === "archived"
+                ? "暂无已归档批次"
+                : (batches.length === 0
+                  ? "暂无审核数据，请在左侧输入文本或上传文件后提取"
+                  : "当前筛选下暂无数据，可切换为「全部」查看其他人的提取结果")}
+            </div>
+          ) : (
+            visibleBatches.map((batch) => (
+              <BatchCard
+                key={batch.batchId}
+                batch={batch}
+                setBatches={setBatches}
+                selectedFactIds={selectedFactIds}
+                hasAnySelection={selectedCount > 0}
+                onToggleSelect={toggleSelectFact}
+                onToggleBatch={toggleSelectBatch}
+                onUnarchive={handleUnarchive}
+              />
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── 批次卡片 ──────────────────────────────────────────────────────────────────
+function BatchCard({
+  batch,
+  setBatches,
+  selectedFactIds,
+  hasAnySelection,
+  onToggleSelect,
+  onToggleBatch,
+  onUnarchive,
+}: {
+  batch: ExtractBatch;
+  setBatches: React.Dispatch<React.SetStateAction<ExtractBatch[]>>;
+  selectedFactIds: Set<string>;
+  /** 全局是否有任何条目被选中（控制所有批次的批量操作按钮显隐） */
+  hasAnySelection: boolean;
+  onToggleSelect: (factId: string) => void;
+  onToggleBatch: (batch: ExtractBatch) => void;
+  onUnarchive: (batchId: string) => void;
+}) {
+  const [sourceVisible, setSourceVisible] = useState(false);
+  const pending  = batch.facts.filter((f) => f.status === "待审核").length;
+  const approved = batch.facts.filter((f) => f.status === "已审核").length;
+  const rejected = batch.facts.filter((f) => f.status === "已拒绝").length;
+  const isArchived = batch.archived;
+  const archiveLabel = batch.archiveReason === "exported" ? "已导出"
+    : batch.archiveReason === "committed" ? "已入库"
+    : "已归档";
+  /** 该批次是否有任何条目被多选 */
+  const batchHasSelection = batch.facts.some((f) => selectedFactIds.has(f.factId));
+
+  const toggle = () => setBatches((prev) => prev.map((b) => b.batchId === batch.batchId ? { ...b, expanded: !b.expanded } : b));
+
+  /** 更新单条事实，可附带日志（追加到 logs 末尾） */
+  const updateFact = (factId: string, patch: Partial<ExtractedFact>, log?: BufferLog) => {
+    setBatches((prev) => prev.map((b) =>
+      b.batchId !== batch.batchId ? b : {
+        ...b,
+        facts: b.facts.map((f) => f.factId === factId
+          ? { ...f, ...patch, logs: log ? [...f.logs, log] : f.logs }
+          : f),
+      }
+    ));
+  };
+
+  const deleteFact = (factId: string) => {
+    const dlg = DialogPlugin.confirm({
+      header: "删除确认", body: "确认从缓冲池删除此条事实？", theme: "danger",
+      confirmBtn: { content: "删除", theme: "danger" },
+      onConfirm: () => {
+        setBatches((prev) => prev.map((b) => b.batchId !== batch.batchId ? b : { ...b, facts: b.facts.filter((f) => f.factId !== factId) }).filter((b) => b.facts.length > 0));
+        dlg.destroy();
+      },
+      onCancel: () => dlg.destroy(),
+    });
+  };
+
+  const handleBatchApprove = () => {
+    if (pending === 0) {
+      MessagePlugin.warning("批次内已无待审核条目");
+      return;
+    }
+    setBatches((prev) => prev.map((b) =>
+      b.batchId !== batch.batchId ? b : {
+        ...b,
+        facts: b.facts.map((f) => f.status === "待审核"
+          ? { ...f, status: "已审核", logs: [...f.logs, mkLog("通过", `整批通过（剩余 ${pending} 条待审核）`)] }
+          : f),
+      }
+    ));
+    MessagePlugin.success(`已通过 ${pending} 条剩余待审核（已标注的不变）`);
+  };
+
+  const handleBatchReject = () => {
+    const dlg = DialogPlugin.confirm({
+      header: "拒绝整批", body: `确认拒绝此批次全部 ${pending} 条待审核事实？`, theme: "danger",
+      confirmBtn: { content: "确认拒绝", theme: "danger" },
+      onConfirm: () => {
+        setBatches((prev) => prev.map((b) =>
+          b.batchId !== batch.batchId ? b : {
+            ...b,
+            facts: b.facts.map((f) => f.status === "待审核"
+              ? { ...f, status: "已拒绝", logs: [...f.logs, mkLog("拒绝", "整批拒绝（批量操作）")] }
+              : f),
+          }
+        ));
+        dlg.destroy();
+      },
+      onCancel: () => dlg.destroy(),
+    });
+  };
+
+  const handleDeleteBatch = () => {
+    const dlg = DialogPlugin.confirm({
+      header: "删除批次", body: `确认删除此批次全部 ${batch.facts.length} 条事实？`, theme: "danger",
+      confirmBtn: { content: "删除", theme: "danger" },
+      onConfirm: () => { setBatches((prev) => prev.filter((b) => b.batchId !== batch.batchId)); dlg.destroy(); },
+      onCancel: () => dlg.destroy(),
+    });
+  };
+
+  return (
+    <div style={{ border: "1px solid var(--td-component-stroke)", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
+      {/* 批次头 */}
+      <div
+        style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "var(--td-bg-color-secondarycontainer)", cursor: "pointer", userSelect: "none" }}
+        onClick={toggle}
+      >
+        {/* 整批多选 Checkbox（仅待处理批次显示） */}
+        {!isArchived && (
+          <Checkbox
+            checked={batch.facts.length > 0 && batch.facts.every((f) => selectedFactIds.has(f.factId))}
+            indeterminate={batch.facts.some((f) => selectedFactIds.has(f.factId)) && !batch.facts.every((f) => selectedFactIds.has(f.factId))}
+            onChange={() => onToggleBatch(batch)}
+            onClick={(e) => e.stopPropagation()}
+            style={{ flexShrink: 0 }}
+          />
+        )}
+        {batch.expanded ? <ChevronDownIcon style={{ flexShrink: 0 }} /> : <ChevronRightIcon style={{ flexShrink: 0 }} />}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+            <Tooltip content={`点击复制批次编号「${batch.batchId}」`}>
+              <Tag
+                theme="primary"
+                variant="outline"
+                size="small"
+                style={{ flexShrink: 0, fontFamily: "var(--td-font-family-mono, monospace)", cursor: "pointer", letterSpacing: 0.3 }}
+                onClick={(ctx) => {
+                  ctx.e.stopPropagation();
+                  navigator.clipboard?.writeText(batch.batchId).then(
+                    () => MessagePlugin.success(`已复制：${batch.batchId}`),
+                    () => MessagePlugin.warning("复制失败，请手动复制"),
+                  );
+                }}
+              >
+                {batch.batchId}
+              </Tag>
+            </Tooltip>
+            <span style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{batch.batchLabel}</span>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--td-text-color-placeholder)" }}>
+            {batch.extractedAt} · 提取人：<span style={{ color: batch.extractor === CURRENT_USER ? "var(--td-brand-color)" : "var(--td-text-color-secondary)" }}>{batch.extractor}{batch.extractor === CURRENT_USER ? "（我）" : ""}</span> · {batch.model} · {batch.mode} · 共 {batch.facts.length} 条
+          </div>
+          {/* 导出记录 */}
+          {batch.archiveReason === "exported" && batch.exportedAt && (
+            <div style={{ fontSize: 11, color: "var(--td-text-color-placeholder)", marginTop: 1 }}>
+              📎 导出于 {batch.exportedAt}{batch.archivedBy ? <span> · 由 <span style={{ color: batch.archivedBy === CURRENT_USER ? "var(--td-brand-color)" : "var(--td-text-color-secondary)" }}>{batch.archivedBy.replace(/\(.*?\)/, "").trim() || batch.archivedBy}</span> 操作</span> : ""}
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+          {isArchived && (
+            <Tag theme="success" variant="light" size="small">
+              {batch.archiveReason === "exported" ? "📎 已导出" : batch.archiveReason === "committed" ? "📥 已入库" : "📁 已归档"}
+            </Tag>
+          )}
+          {pending  > 0 && <Tag theme="warning" variant="light" size="small">待审核 {pending}</Tag>}
+          {approved > 0 && <Tag theme="primary" variant="light" size="small">已审核 {approved}</Tag>}
+          {rejected > 0 && <Tag theme="default" variant="light" size="small">已拒绝 {rejected}</Tag>}
+          <Button variant="text" size="small" onClick={(e) => { e.stopPropagation(); setSourceVisible(!sourceVisible); }}>
+            {sourceVisible ? "收起原文" : "查看原文"}
+          </Button>
+          {/* 全局无多选时显示整批通过/拒绝；有任何多选时统一走顶部批量操作栏 */}
+          {!isArchived && !hasAnySelection && pending > 0 && (
+            <Tooltip content="对当前批次所有「待审核」条目执行通过；已标注的条目不受影响（取差集通过）">
+              <Button variant="outline" size="small" theme="primary" onClick={(e) => { e.stopPropagation(); handleBatchApprove(); }}>
+                整批通过
+              </Button>
+            </Tooltip>
+          )}
+          {!isArchived && !hasAnySelection && pending > 0 && (
+            <Button variant="outline" size="small" theme="danger" onClick={(e) => { e.stopPropagation(); handleBatchReject(); }}>整批拒绝</Button>
+          )}
+          {/* 已归档批次：取消归档 */}
+          {isArchived && (
+            <Tooltip content={`归档原因：${archiveLabel}${batch.archivedAt ? ` · ${batch.archivedAt}` : ""}`}>
+              <Button variant="outline" size="small" theme="warning" onClick={(e) => { e.stopPropagation(); onUnarchive(batch.batchId); }}>取消归档</Button>
+            </Tooltip>
+          )}
+          {/* 全局无多选时显示删除批次 */}
+          {!hasAnySelection && (
+            <Button variant="text" size="small" theme="danger" onClick={(e) => { e.stopPropagation(); handleDeleteBatch(); }}>删除批次</Button>
+          )}
+        </div>
+      </div>
+
+      {/* 原文 */}
+      {sourceVisible && (
+        <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--td-component-stroke)", background: "#fafafa", fontSize: 12, lineHeight: 1.8, color: "var(--td-text-color-secondary)", whiteSpace: "pre-wrap", maxHeight: 120, overflowY: "auto" }}>
+          {batch.sourceText}
+        </div>
+      )}
+
+      {/* 事实列表 */}
+      {batch.expanded && batch.facts.map((fact, idx) => (
+        <FactRow
+          key={fact.factId}
+          fact={fact}
+          index={idx}
+          isLast={idx === batch.facts.length - 1}
+          readOnly={isArchived}
+          selected={selectedFactIds.has(fact.factId)}
+          onToggleSelect={() => onToggleSelect(fact.factId)}
+          onApprove={() => updateFact(fact.factId, { status: "已审核" }, mkLog("通过", "审核通过"))}
+          onReject={() => updateFact(fact.factId, { status: "已拒绝" }, mkLog("拒绝", "审核拒绝"))}
+          onRevoke={() => updateFact(fact.factId, { status: "待审核" }, mkLog("撤回", `从「${fact.status}」撤回到「待审核」`))}
+          onDelete={() => deleteFact(fact.factId)}
+          onUpdate={(patch, log) => updateFact(fact.factId, patch, log)}
+        />
+      ))}
+
+      {/* 归档流程说明（待处理批次展开时展示在底部） */}
+      {!isArchived && batch.expanded && (
+        <div style={{
+          padding: "7px 12px",
+          borderTop: "1px solid var(--td-component-stroke)",
+          background: "var(--td-bg-color-secondarycontainer)",
+          fontSize: 11,
+          color: "var(--td-text-color-placeholder)",
+          display: "flex", alignItems: "center", gap: 6,
+        }}>
+          <span style={{ fontWeight: 500, color: "var(--td-text-color-secondary)" }}>归档触发条件：</span>
+          全部条目审核完毕后点「已审核全部入库」自动归档；或勾选条目后「导出为 Excel」自动归档。不支持手动归档。
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 单条事实行 ───────────────────────────────────────────────────────────────
+function FactRow({
+  fact, index, isLast, readOnly, selected, onToggleSelect,
+  onApprove, onReject, onRevoke, onDelete, onUpdate,
+}: {
+  fact: ExtractedFact;
+  index: number;
+  isLast: boolean;
+  readOnly: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+  onRevoke: () => void;
+  onDelete: () => void;
+  onUpdate: (patch: Partial<ExtractedFact>, log?: BufferLog) => void;
+}) {
+  const [editVisible,     setEditVisible]     = useState(false);
+  const [conflictVisible, setConflictVisible] = useState(false);
+  const [duplicateVisible, setDuplicateVisible] = useState(false);
+  const [logVisible,       setLogVisible]       = useState(false);
+
+  const statusTheme: Record<string, "warning" | "primary" | "default"> = {
+    "待审核": "warning", "已审核": "primary", "已拒绝": "default",
+  };
+
+
+  return (
+    <>
+      <div style={{
+        display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",
+        borderBottom: isLast ? "none" : "1px solid var(--td-component-stroke)",
+        overflow: "hidden",
+        background: selected ? "rgba(0,82,217,0.05)" : "transparent",
+        transition: "background .15s",
+      }}>
+        {/* 多选框（仅待处理可见）+ 序号 */}
+        {!readOnly && (
+          <Checkbox checked={selected} onChange={onToggleSelect} style={{ flexShrink: 0, marginTop: 2 }} />
+        )}
+        <div style={{ width: 20, height: 20, borderRadius: "50%", background: "var(--td-bg-color-component)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "var(--td-text-color-placeholder)", flexShrink: 0, marginTop: 2 }}>
+          {index + 1}
+        </div>
+
+        {/* 双列内容 */}
+        <div style={{ flex: 1, display: "flex", gap: 12, minWidth: 0 }}>
+          {/* 左：事实内容（宽） */}
+          <div style={{ flex: "1.6", minWidth: 0 }}>
+            <div style={{ fontSize: 13, lineHeight: 1.7, color: "var(--td-text-color-primary)", marginBottom: (fact.conflict || fact.duplicate) ? 8 : 0 }}>
+              {fact.content}
+            </div>
+            {/* 冲突 / 重复 Tag */}
+            {(fact.conflict || fact.duplicate) && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {fact.conflict && (
+                  <Tooltip content={<span style={{ fontSize: 12, lineHeight: 1.6 }}>{fact.conflict.reason}</span>} placement="top" overlayStyle={{ maxWidth: 360 }}>
+                    <Tag
+                      theme="danger"
+                      variant="light"
+                      size="small"
+                      icon={<span style={{ fontSize: 12 }}>⚠</span>}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => setConflictVisible(true)}
+                    >
+                      冲突事实：[{fact.conflict.factId}]
+                    </Tag>
+                  </Tooltip>
+                )}
+                {fact.duplicate && (
+                  <Tooltip content={<span style={{ fontSize: 12, lineHeight: 1.6 }}>相似度 {Math.round(fact.duplicate.similarity * 100)}%：{fact.duplicate.factContent.slice(0, 80)}…</span>} placement="top" overlayStyle={{ maxWidth: 360 }}>
+                    <Tag
+                      theme="warning"
+                      variant="light"
+                      size="small"
+                      icon={<span style={{ fontSize: 12 }}>≈</span>}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => setDuplicateVisible(true)}
+                    >
+                      重复事实：[{fact.duplicate.factId}]
+                    </Tag>
+                  </Tooltip>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 右：三段关联信息 */}
+          <div style={{ flex: 1, minWidth: 0, fontSize: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+
+            {/* ① 实体匹配 */}
+            <div>
+              <div style={{ color: "var(--td-text-color-placeholder)", marginBottom: 4, fontWeight: 500 }}>实体匹配</div>
+              {fact.entities.length > 0 ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: fact.newEntities.length > 0 ? 4 : 0 }}>
+                  {fact.entities.map((e) => (
+                    <Tag key={e} theme="default" variant="light" size="small" closable
+                      onClose={() => onUpdate(
+                        { entities: fact.entities.filter((x) => x !== e) },
+                        mkLog("编辑", `移除关联实体「${e}」`),
+                      )}>
+                      {e}
+                    </Tag>
+                  ))}
+                </div>
+              ) : (
+                <span style={{ color: "var(--td-text-color-placeholder)", fontSize: 11 }}>无匹配实体</span>
+              )}
+              {fact.newEntities.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
+                  {fact.newEntities.map((e, ei) => {
+                    const isDiscarded = e.decision === "discard";
+                    const tip = [
+                      "提取文本中发现的新名词，确认后可入实体库",
+                      e.description && `描述：${e.description}`,
+                      e.tags.length > 0 && `标签：${e.tags.join(", ")}`,
+                    ].filter(Boolean).join("\n");
+                    const toggleDecision = () => {
+                      const next: "keep" | "discard" = isDiscarded ? "keep" : "discard";
+                      const updated = fact.newEntities.map((x, j) => j === ei ? { ...x, decision: next } : x);
+                      onUpdate(
+                        { newEntities: updated },
+                        mkLog(next === "discard" ? "实体丢弃" : "实体恢复", `${next === "discard" ? "丢弃" : "恢复"}建议新增实体「${e.name}」`)
+                      );
+                    };
+                    return (
+                      <Tooltip key={e.name + ei} content={isDiscarded ? `已丢弃「${e.name}」，点击 × 可恢复` : tip}>
+                        <Tag
+                          theme={isDiscarded ? "default" : "warning"}
+                          variant="light"
+                          size="small"
+                          style={{
+                            opacity: isDiscarded ? 0.55 : 1,
+                            textDecoration: isDiscarded ? "line-through" : "none",
+                            cursor: "default",
+                          }}
+                          closable
+                          onClose={(ctx) => {
+                            ctx.e.stopPropagation();
+                            toggleDecision();
+                          }}
+                        >
+                          建议新增：{e.name}
+                          {!isDiscarded && e.tags.length > 0 && <span style={{ marginLeft: 4, color: "var(--td-text-color-placeholder)" }}>· {e.tags.length}标签</span>}
+                        </Tag>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ② 事件匹配 + 冲突 */}
+            <div>
+              <div style={{ color: "var(--td-text-color-placeholder)", marginBottom: 4, fontWeight: 500 }}>事件匹配</div>
+
+              {/* 关联已有事件 */}
+              {fact.events.length > 0 ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {fact.events.map((e) => (
+                    <Tag key={e} theme="default" variant="light" size="small" closable
+                      onClose={() => onUpdate(
+                        { events: fact.events.filter((x) => x !== e) },
+                        mkLog("编辑", `移除关联事件「${e}」`),
+                      )}>
+                      {e}
+                    </Tag>
+                  ))}
+                </div>
+              ) : (
+                <span style={{ color: "var(--td-text-color-placeholder)", fontSize: 11 }}>无关联事件</span>
+              )}
+
+              {/* 建议新增事件 */}
+              {fact.newEvents.length > 0 && (
+                <div style={{ marginTop: 5, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {fact.newEvents.map((ne, i) => {
+                    const isDiscarded = ne.decision === "discard";
+                    return (
+                      <div key={i} style={{
+                        background: isDiscarded ? "var(--td-bg-color-component-disabled)" : "rgba(255,184,0,0.06)",
+                        border: `1px solid ${isDiscarded ? "var(--td-component-stroke)" : "rgba(255,184,0,0.35)"}`,
+                        borderRadius: 4, padding: "5px 8px", fontSize: 11,
+                        opacity: isDiscarded ? 0.55 : 1,
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
+                          <Tag theme="warning" variant="light" size="small" style={{ flexShrink: 0 }}>建议新增事件</Tag>
+                          <span style={{ fontWeight: 500, textDecoration: isDiscarded ? "line-through" : "none" }}>{ne.name}</span>
+                          <span style={{ color: "var(--td-text-color-placeholder)" }}>· {ne.eventType}</span>
+                          <span style={{ flex: 1 }} />
+                          {isDiscarded ? (
+                            <Button variant="text" size="small" theme="primary" onClick={() => {
+                              const updated = fact.newEvents.map((x, j) => j === i ? { ...x, decision: "keep" as const } : x);
+                              onUpdate({ newEvents: updated }, mkLog("事件恢复", `恢复建议新增事件「${ne.name}」`));
+                            }}>恢复</Button>
+                          ) : (
+                            <Button variant="text" size="small" theme="danger" onClick={() => {
+                              const updated = fact.newEvents.map((x, j) => j === i ? { ...x, decision: "discard" as const } : x);
+                              onUpdate({ newEvents: updated }, mkLog("事件丢弃", `丢弃建议新增事件「${ne.name}」`));
+                            }}>丢弃</Button>
+                          )}
+                        </div>
+                        <div style={{
+                          color: "var(--td-text-color-secondary)",
+                          textDecoration: isDiscarded ? "line-through" : "none",
+                        }}>
+                          {ne.startTime && <span>{ne.startTime.slice(0, 10)} ~ {ne.endTime.slice(0, 10)}　</span>}
+                          {ne.description}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ③ 事实有效时间 */}
+            {(fact.startTime || fact.endTime || fact.timeDesc) && (
+              <div>
+                <div style={{ color: "var(--td-text-color-placeholder)", marginBottom: 3, fontWeight: 500 }}>有效时间</div>
+                <div style={{ color: "var(--td-text-color-secondary)", fontSize: 11 }}>
+                  {fact.startTime && <span>{fact.startTime.slice(0, 10)} ~ {fact.endTime.slice(0, 10)}　</span>}
+                  {fact.timeDesc && <span>{fact.timeDesc}</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 操作区 */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+          {/* 状态标签：已审核/已拒绝时显示操作人 */}
+          {(() => {
+            if (fact.status === "待审核") {
+              return <Tag theme="warning" variant="light" size="small">待审核</Tag>;
+            }
+            const actionLog = [...fact.logs].reverse().find((l) => l.action === "通过" || l.action === "拒绝");
+            const operator = actionLog?.operator ?? "";
+            const opShort = operator.replace(/\(.*?\)/, "").trim() || operator;
+            if (fact.status === "已审核") {
+              return (
+                <Tooltip content={`审核人：${operator}${actionLog ? ` · ${actionLog.time}` : ""}`}>
+                  <Tag theme="primary" variant="light" size="small" style={{ cursor: "default" }}>
+                    {opShort ? `已由 ${opShort} 审核` : "已审核"}
+                  </Tag>
+                </Tooltip>
+              );
+            }
+            if (fact.status === "已拒绝") {
+              return (
+                <Tooltip content={`拒绝人：${operator}${actionLog ? ` · ${actionLog.time}` : ""}`}>
+                  <Tag theme="default" variant="light" size="small" style={{ cursor: "default" }}>
+                    {opShort ? `已由 ${opShort} 拒绝` : "已拒绝"}
+                  </Tag>
+                </Tooltip>
+              );
+            }
+            return <Tag theme={statusTheme[fact.status] || "default"} variant="light" size="small">{fact.status}</Tag>;
+          })()}
+
+          {/* 组 1（上）：编辑 / 日志 / 查看 */}
+          <Space size={2}>
+            {readOnly ? (
+              <Tooltip content="查看事实详情（已归档批次只读）">
+                <Button variant="text" theme="primary" size="small" onClick={() => setEditVisible(true)}>查看</Button>
+              </Tooltip>
+            ) : (
+              fact.status !== "已拒绝" && (
+                <Button variant="text" theme="primary" size="small" onClick={() => setEditVisible(true)}>编辑</Button>
+              )
+            )}
+            <Tooltip content={`查看操作记录（${fact.logs.length}条）`}>
+              <Button variant="text" size="small" onClick={() => setLogVisible(true)}>日志</Button>
+            </Tooltip>
+          </Space>
+
+          {/* 分隔线 */}
+          {!readOnly && (
+            <div style={{ width: "100%", height: 1, background: "var(--td-component-stroke)" }} />
+          )}
+
+          {/* 组 2（下）：审批操作（通过 / 拒绝 / 撤回），竖排 */}
+          {!readOnly && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "stretch" }}>
+              {fact.status === "待审核" && <>
+                <Button variant="outline" theme="success" size="small" icon={<CheckIcon />} onClick={onApprove} style={{ justifyContent: "center" }}>通过</Button>
+                <Button variant="outline" theme="danger"  size="small" icon={<CloseIcon />} onClick={onReject}  style={{ justifyContent: "center" }}>拒绝</Button>
+              </>}
+              {(fact.status === "已审核" || fact.status === "已拒绝") && (
+                <Tooltip content={fact.status === "已审核" ? "撤回到待审核状态" : "撤回到待审核重新判断"}>
+                  <Button variant="outline" theme="warning" size="small" onClick={onRevoke} style={{ width: "100%", justifyContent: "center" }}>撤回</Button>
+                </Tooltip>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 编辑抽屉（富信息版）*/}
+      <FactEditDrawer
+        visible={editVisible}
+        fact={fact}
+        onClose={() => setEditVisible(false)}
+        onSave={(patch, summary) => {
+          onUpdate(patch, mkLog("编辑", summary || "编辑事实内容"));
+          setEditVisible(false);
+          MessagePlugin.success("已保存");
+        }}
+      />
+
+      {/* 冲突事实详情 + 差异对比 */}
+      {fact.conflict && (
+        <CompareDialog
+          visible={conflictVisible}
+          onClose={() => setConflictVisible(false)}
+          mode="conflict"
+          oldFactId={fact.conflict.factId}
+          oldContent={fact.conflict.factContent}
+          newContent={fact.content}
+          extra={fact.conflict.reason}
+        />
+      )}
+      {/* 重复事实详情 + 差异对比 */}
+      {fact.duplicate && (
+        <CompareDialog
+          visible={duplicateVisible}
+          onClose={() => setDuplicateVisible(false)}
+          mode="duplicate"
+          oldFactId={fact.duplicate.factId}
+          oldContent={fact.duplicate.factContent}
+          newContent={fact.content}
+          extra={`相似度 ${Math.round(fact.duplicate.similarity * 100)}%`}
+        />
+      )}
+
+      {/* 操作日志 */}
+      <BufferLogDialog visible={logVisible} onClose={() => setLogVisible(false)} logs={fact.logs} factTitle={fact.content.slice(0, 30) + "…"} />
+    </>
+  );
+}
+
+// ─── 缓冲池事实编辑抽屉（富信息版）─────────────────────────────────────────────
+function FactEditDrawer({
+  visible, fact, onClose, onSave,
+}: {
+  visible: boolean;
+  fact: ExtractedFact;
+  onClose: () => void;
+  onSave: (patch: Partial<ExtractedFact>, summary?: string) => void;
+}) {
+  const [content,     setContent]     = useState(fact.content);
+  const [entities,    setEntities]    = useState<string[]>(fact.entities);
+  const [newEntities, setNewEntities] = useState<NewEntitySuggestion[]>(fact.newEntities);
+  const [events,      setEvents]      = useState<string[]>(fact.events);
+  const [newEvents,   setNewEvents]   = useState<NewEventSuggestion[]>(fact.newEvents);
+  const [startTime,   setStartTime]   = useState(fact.startTime);
+  const [endTime,     setEndTime]     = useState(fact.endTime);
+  const [timeDesc,    setTimeDesc]    = useState(fact.timeDesc);
+
+  // 抽屉打开时（visible 从 false 变 true），把当前 fact 数据填入编辑状态
+  const prevVisibleRef = React.useRef(visible);
+  React.useEffect(() => {
+    if (visible && !prevVisibleRef.current) {
+      setContent(fact.content);
+      setEntities(fact.entities);
+      setNewEntities(fact.newEntities);
+      setEvents(fact.events);
+      setNewEvents(fact.newEvents);
+      setStartTime(fact.startTime);
+      setEndTime(fact.endTime);
+      setTimeDesc(fact.timeDesc);
+    }
+    prevVisibleRef.current = visible;
+  }, [visible, fact]);
+
+  const removeTag = <T extends string>(list: T[], item: T, setList: React.Dispatch<React.SetStateAction<T[]>>) =>
+    setList(list.filter((x) => x !== item));
+
+  // 实时基于当前编辑内容做"重新校验"，让用户改内容时立刻看到冲突/重复是否已消除
+  const liveCheck = React.useMemo(() => recheckConflict(content), [content]);
+  const [compareDlg, setCompareDlg] = useState<{ mode: "conflict" | "duplicate" } | null>(null);
+
+  /** 保存：先做 recheck，再把最新冲突/重复结果写回；并生成编辑摘要 */
+  const handleSave = () => {
+    const recheck = recheckConflict(content);
+
+    // 组装编辑摘要：列出哪些字段变了
+    const changes: string[] = [];
+    if (content    !== fact.content)    changes.push("事实内容");
+    if (JSON.stringify(entities)    !== JSON.stringify(fact.entities))    changes.push("关联实体");
+    if (JSON.stringify(newEntities) !== JSON.stringify(fact.newEntities)) changes.push("新发现实体");
+    if (JSON.stringify(events)      !== JSON.stringify(fact.events))      changes.push("关联事件");
+    if (JSON.stringify(newEvents)   !== JSON.stringify(fact.newEvents))   changes.push("新发现事件");
+    if (startTime !== fact.startTime || endTime !== fact.endTime || timeDesc !== fact.timeDesc) changes.push("有效时间");
+
+    // 冲突/重复变化也写入摘要
+    if (fact.conflict  && !recheck.conflict)  changes.push(`已解除与 [${fact.conflict.factId}] 的冲突`);
+    if (!fact.conflict &&  recheck.conflict)  changes.push(`命中新冲突 [${recheck.conflict.factId}]`);
+    if (fact.duplicate && !recheck.duplicate) changes.push(`已解除与 [${fact.duplicate.factId}] 的重复`);
+    if (!fact.duplicate &&  recheck.duplicate) changes.push(`命中新重复 [${recheck.duplicate.factId}]`);
+
+    const summary = changes.length > 0 ? `修改了：${changes.join("、")}` : "无字段变化（点击保存触发了一次重新校验）";
+
+    onSave({
+      content, entities, newEntities, events, newEvents, startTime, endTime, timeDesc,
+      conflict: recheck.conflict,
+      duplicate: recheck.duplicate,
+    }, summary);
+
+    if (!recheck.conflict && fact.conflict) MessagePlugin.success("冲突已通过编辑解除");
+    if (!recheck.duplicate && fact.duplicate) MessagePlugin.success("重复已通过编辑解除");
+  };
+
+
+
+  return (
+    <Drawer
+      visible={visible}
+      header="编辑事实"
+      size="60vw"
+      placement="right"
+      onClose={onClose}
+      footer={
+        <Space>
+          <Button variant="outline" onClick={onClose}>取消</Button>
+          <Button theme="primary" onClick={handleSave}>保存</Button>
+        </Space>
+      }
+    >
+      <div style={{ display: "flex", gap: 0, height: "100%", overflow: "hidden" }}>
+
+        {/* 左列：事实内容 */}
+        <div style={{ flex: "1.4", overflow: "auto", paddingRight: 20 }}>
+          <Form labelAlign="top" labelWidth={0}>
+            <FormItem label={<span style={{ fontWeight: 600 }}>事实内容 <span style={{ color: "var(--td-error-color)" }}>*</span></span>}>
+              <Textarea value={content} onChange={(v) => setContent(v)} autosize={{ minRows: 8 }} placeholder="请输入事实内容…" />
+            </FormItem>
+
+            {/* 冲突 / 重复 / 已解除 提示（基于实时内容校验） */}
+            {liveCheck.conflict && (
+              <div style={{ padding: "10px 12px", background: "rgba(227,77,89,0.06)", border: "1px solid rgba(227,77,89,0.2)", borderRadius: 6, marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#e34d59" }}>⚠ 冲突事实</span>
+                  <Tag theme="danger" variant="light" size="small">[{liveCheck.conflict.factId}]</Tag>
+                  <span style={{ flex: 1 }} />
+                  <Button variant="text" size="small" theme="primary" onClick={() => setCompareDlg({ mode: "conflict" })}>查看对比</Button>
+                </div>
+                <div style={{ fontSize: 12, color: "#e34d59", lineHeight: 1.7 }}>{liveCheck.conflict.reason}</div>
+                <div style={{ fontSize: 12, marginTop: 8, color: "var(--td-text-color-secondary)", background: "#fff", borderRadius: 4, padding: "6px 10px", border: "1px solid var(--td-component-stroke)" }}>
+                  {liveCheck.conflict.factContent}
+                </div>
+              </div>
+            )}
+            {liveCheck.duplicate && (
+              <div style={{ padding: "10px 12px", background: "rgba(255,184,0,0.06)", border: "1px solid rgba(255,184,0,0.35)", borderRadius: 6, marginBottom: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--td-warning-color)" }}>≈ 重复事实</span>
+                  <Tag theme="warning" variant="light" size="small">[{liveCheck.duplicate.factId}]</Tag>
+                  <Tag theme="warning" variant="light" size="small">相似度 {Math.round(liveCheck.duplicate.similarity * 100)}%</Tag>
+                  <span style={{ flex: 1 }} />
+                  <Button variant="text" size="small" theme="primary" onClick={() => setCompareDlg({ mode: "duplicate" })}>查看对比</Button>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--td-text-color-secondary)", background: "#fff", borderRadius: 4, padding: "6px 10px", border: "1px solid var(--td-component-stroke)" }}>
+                  {liveCheck.duplicate.factContent}
+                </div>
+              </div>
+            )}
+            {/* 已解除提示：原本有冲突/重复，编辑后已不再命中 */}
+            {fact.conflict && !liveCheck.conflict && (
+              <div style={{ padding: "8px 12px", background: "rgba(0,168,112,0.06)", border: "1px solid rgba(0,168,112,0.3)", borderRadius: 6, marginBottom: 10, fontSize: 12, color: "var(--td-success-color)" }}>
+                ✓ 编辑后已不再与 [{fact.conflict.factId}] 冲突，保存即生效
+              </div>
+            )}
+            {fact.duplicate && !liveCheck.duplicate && (
+              <div style={{ padding: "8px 12px", background: "rgba(0,168,112,0.06)", border: "1px solid rgba(0,168,112,0.3)", borderRadius: 6, marginBottom: 10, fontSize: 12, color: "var(--td-success-color)" }}>
+                ✓ 编辑后已不再与 [{fact.duplicate.factId}] 重复，保存即生效
+              </div>
+            )}
+          </Form>
+        </div>
+
+        {/* 分割线 */}
+        <div style={{ width: 1, background: "var(--td-component-stroke)", margin: "0 4px", flexShrink: 0 }} />
+
+        {/* 右列：关联信息 */}
+        <div style={{ flex: 1, overflow: "auto", paddingLeft: 20 }}>
+          <Form labelAlign="top" labelWidth={0}>
+
+            {/* 关联实体（已存在）*/}
+            <FormItem label="关联实体（已存在）">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 6 }}>
+                {entities.map((e) => (
+                  <Tag key={e} theme="default" variant="light" size="small" closable onClose={() => removeTag(entities, e, setEntities)}>{e}</Tag>
+                ))}
+              </div>
+              <Select
+                filterable placeholder="搜索并添加已有实体…"
+                options={entityOptions.filter((o) => !entities.includes(o.value))}
+                onChange={(v) => { if (v && !entities.includes(v as string)) setEntities([...entities, v as string]); }}
+                style={{ width: "100%" }}
+              />
+            </FormItem>
+
+            {/* 新发现实体（待入库）—— 卡片表单：名称 / 描述 / 标签 + 丢弃 / 恢复 / 添加 */}
+            <FormItem label="新发现实体（待入库）">
+              {newEntities.length === 0 && (
+                <div style={{ fontSize: 12, color: "var(--td-text-color-placeholder)", marginBottom: 8 }}>
+                  未检测到新实体
+                </div>
+              )}
+              {newEntities.map((entity, i) => {
+                const isDiscarded = entity.decision === "discard";
+                const updateEntity = (patch: Partial<NewEntitySuggestion>) =>
+                  setNewEntities(newEntities.map((x, j) => j === i ? { ...x, ...patch } : x));
+                const removeEntity = () =>
+                  setNewEntities(newEntities.filter((_, j) => j !== i));
+                return (
+                  <div key={i} style={{
+                    border: `1px solid ${isDiscarded ? "var(--td-component-stroke)" : "rgba(255,184,0,0.35)"}`,
+                    background: isDiscarded ? "var(--td-bg-color-component-disabled)" : "rgba(255,184,0,0.04)",
+                    borderRadius: 6, padding: "10px 12px", marginBottom: 8, fontSize: 12,
+                    opacity: isDiscarded ? 0.55 : 1,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                      <Tag theme="warning" variant="light" size="small">建议新增</Tag>
+                      {isDiscarded && <Tag theme="default" variant="light" size="small">已丢弃</Tag>}
+                      <span style={{ flex: 1 }} />
+                      {isDiscarded ? (
+                        <Button variant="text" size="small" theme="primary" onClick={() => updateEntity({ decision: "keep" })}>恢复</Button>
+                      ) : (
+                        <Button variant="text" size="small" theme="danger" onClick={() => updateEntity({ decision: "discard" })}>丢弃</Button>
+                      )}
+                      <Button variant="text" size="small" theme="danger" icon={<CloseIcon />} onClick={removeEntity} />
+                    </div>
+                    <div style={{ marginBottom: 6 }}>
+                      <Input value={entity.name} disabled={isDiscarded} onChange={(v) => updateEntity({ name: v })} placeholder="实体名称" />
+                    </div>
+                    <div style={{ marginBottom: 6 }}>
+                      <Textarea value={entity.description} disabled={isDiscarded} onChange={(v) => updateEntity({ description: v })} autosize={{ minRows: 2, maxRows: 3 }} placeholder="实体描述（可选）" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: "var(--td-text-color-placeholder)", marginBottom: 3 }}>标签（用逗号分隔）</div>
+                      <Input
+                        value={entity.tags.join(", ")}
+                        disabled={isDiscarded}
+                        onChange={(v) => updateEntity({ tags: v.split(",").map((t) => t.trim()).filter(Boolean) })}
+                        placeholder="标签1, 标签2"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              <Button variant="outline" size="small" theme="warning" icon={<AddIcon />}
+                onClick={() => setNewEntities([...newEntities, { name: "", description: "", tags: [], decision: "keep" }])}>
+                添加新实体
+              </Button>
+            </FormItem>
+
+            {/* 关联事件（已存在）*/}
+            <FormItem label="关联事件（已存在）">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 6 }}>
+                {events.map((e) => (
+                  <Tag key={e} theme="default" variant="light" size="small" closable onClose={() => removeTag(events, e, setEvents)}>{e}</Tag>
+                ))}
+              </div>
+              <Select
+                filterable placeholder="搜索并添加已有事件…"
+                options={eventOptions.filter((o) => !events.includes(o.value))}
+                onChange={(v) => { if (v && !events.includes(v as string)) setEvents([...events, v as string]); }}
+                style={{ width: "100%" }}
+              />
+            </FormItem>
+
+            {/* 建议新增事件：可编辑字段，可丢弃/恢复/删除/手动添加 */}
+            <FormItem label="新发现事件（待入库）">
+              {newEvents.length === 0 && (
+                <div style={{ fontSize: 12, color: "var(--td-text-color-placeholder)", marginBottom: 8 }}>
+                  未检测到新事件
+                </div>
+              )}
+              {newEvents.map((ne, i) => {
+                const isDiscarded = ne.decision === "discard";
+                const updateField = (patch: Partial<NewEventSuggestion>) =>
+                  setNewEvents(newEvents.map((x, j) => j === i ? { ...x, ...patch } : x));
+                const removeEvent = () => setNewEvents(newEvents.filter((_, j) => j !== i));
+                return (
+                  <div key={i} style={{
+                    border: `1px solid ${isDiscarded ? "var(--td-component-stroke)" : "rgba(255,184,0,0.35)"}`,
+                    background: isDiscarded ? "var(--td-bg-color-component-disabled)" : "rgba(255,184,0,0.04)",
+                    borderRadius: 6, padding: "10px 12px", marginBottom: 8, fontSize: 12,
+                    opacity: isDiscarded ? 0.55 : 1,
+                  }}>
+                    {/* 头部：标题 + 丢弃/恢复/删除 */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                      <Tag theme="warning" variant="light" size="small">建议新增</Tag>
+                      {isDiscarded && <Tag theme="default" variant="light" size="small">已丢弃</Tag>}
+                      <span style={{ flex: 1 }} />
+                      {isDiscarded ? (
+                        <Button variant="text" size="small" theme="primary" onClick={() => updateField({ decision: "keep" })}>恢复</Button>
+                      ) : (
+                        <Button variant="text" size="small" theme="danger" onClick={() => updateField({ decision: "discard" })}>丢弃</Button>
+                      )}
+                      <Button variant="text" size="small" theme="danger" icon={<CloseIcon />} onClick={removeEvent} />
+                    </div>
+
+                    {/* 名称 + 类型 */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                      <div style={{ flex: 2 }}>
+                        <Input value={ne.name} disabled={isDiscarded} onChange={(v) => updateField({ name: v })} placeholder="事件名称" />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <Select
+                          value={ne.eventType}
+                          disabled={isDiscarded}
+                          onChange={(v) => updateField({ eventType: v as string })}
+                          options={[
+                            { label: "活动", value: "活动" },
+                            { label: "赛事", value: "赛事" },
+                            { label: "版本更新", value: "版本更新" },
+                            { label: "运营事件", value: "运营事件" },
+                            { label: "其他", value: "其他" },
+                          ]}
+                          placeholder="事件类型"
+                          style={{ width: "100%" }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* 开始 + 结束 */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                      <DatePicker value={ne.startTime} disabled={isDiscarded} onChange={(v) => updateField({ startTime: v as string })} enableTimePicker clearable placeholder="开始时间" style={{ flex: 1 }} />
+                      <DatePicker value={ne.endTime}   disabled={isDiscarded} onChange={(v) => updateField({ endTime:   v as string })} enableTimePicker clearable placeholder="结束时间" style={{ flex: 1 }} />
+                    </div>
+
+                    {/* 时间描述 */}
+                    <div style={{ marginBottom: 6 }}>
+                      <Input value={ne.timeDesc} disabled={isDiscarded} onChange={(v) => updateField({ timeDesc: v })} placeholder="时间描述（可选，如：每周五至每周日）" />
+                    </div>
+
+                    {/* 描述 */}
+                    <div style={{ marginBottom: 6 }}>
+                      <Textarea value={ne.description} disabled={isDiscarded} onChange={(v) => updateField({ description: v })} autosize={{ minRows: 2, maxRows: 4 }} placeholder="事件描述" />
+                    </div>
+
+                    {/* 标签 */}
+                    <div>
+                      <div style={{ fontSize: 11, color: "var(--td-text-color-placeholder)", marginBottom: 3 }}>标签（用逗号分隔）</div>
+                      <Input
+                        value={ne.tags.join(", ")}
+                        disabled={isDiscarded}
+                        onChange={(v) => updateField({ tags: v.split(",").map((t) => t.trim()).filter(Boolean) })}
+                        placeholder="标签1, 标签2"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              <Button variant="outline" size="small" theme="warning" icon={<AddIcon />}
+                onClick={() => setNewEvents([...newEvents, { name: "", eventType: "活动", startTime: "", endTime: "", timeDesc: "", description: "", tags: [], decision: "keep" }])}>
+                添加新事件
+              </Button>
+            </FormItem>
+
+            {/* 事实时间 */}
+            <FormItem label="开始时间">
+              <DatePicker value={startTime} onChange={(v) => setStartTime(v as string)} enableTimePicker clearable placeholder="选择开始时间" style={{ width: "100%" }} />
+            </FormItem>
+            <FormItem label="结束时间">
+              <DatePicker value={endTime} onChange={(v) => setEndTime(v as string)} enableTimePicker clearable placeholder="选择结束时间" style={{ width: "100%" }} />
+            </FormItem>
+            <FormItem label="时间描述">
+              <Input value={timeDesc} onChange={(v) => setTimeDesc(v)} placeholder="如：每周五至每周日、每月1号等" />
+            </FormItem>
+
+          </Form>
+        </div>
+      </div>
+
+      {/* 抽屉内的对比 Dialog */}
+      {compareDlg && (
+        <CompareDialog
+          visible={!!compareDlg}
+          onClose={() => setCompareDlg(null)}
+          mode={compareDlg.mode}
+          oldFactId={(compareDlg.mode === "conflict" ? liveCheck.conflict?.factId : liveCheck.duplicate?.factId) || ""}
+          oldContent={(compareDlg.mode === "conflict" ? liveCheck.conflict?.factContent : liveCheck.duplicate?.factContent) || ""}
+          newContent={content}
+          extra={compareDlg.mode === "conflict"
+            ? (liveCheck.conflict?.reason || "")
+            : (liveCheck.duplicate ? `相似度 ${Math.round(liveCheck.duplicate.similarity * 100)}%` : "")}
+        />
+      )}
+    </Drawer>
+  );
+}
+
+// ─── 冲突/重复对比 Dialog ──────────────────────────────────────────────────────
+function CompareDialog({
+  visible, onClose, mode, oldFactId, oldContent, newContent, extra,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  mode: "conflict" | "duplicate";
+  oldFactId: string;
+  oldContent: string;
+  newContent: string;
+  extra: string;
+}) {
+  const isConflict = mode === "conflict";
+  const themeColor = isConflict ? "#e34d59" : "var(--td-warning-color)";
+  const bgColor    = isConflict ? "rgba(227,77,89,0.06)" : "rgba(255,184,0,0.08)";
+  const borderClr  = isConflict ? "rgba(227,77,89,0.25)" : "rgba(255,184,0,0.4)";
+
+  // 字符级 diff 拿到 segs；视觉根据 mode 切换：冲突看 del/ins，重复看 equal
+  const segs = React.useMemo(() => charDiff(oldContent, newContent), [oldContent, newContent]);
+
+  /** 冲突场景：在原文中渲染——相同片段淡化、差异片段高亮加粗 */
+  const renderConflictText = (side: "old" | "new") => {
+    return segs.map((s, i) => {
+      if (s.type === "equal") {
+        return <span key={i} style={{ color: "var(--td-text-color-placeholder)" }}>{s.text}</span>;
+      }
+      // 左侧只展示原文（equal + del），右侧只展示新文（equal + ins）
+      if (side === "old") {
+        if (s.type === "del") {
+          return <span key={i} style={{ background: "rgba(227,77,89,0.18)", color: "#c91c30", fontWeight: 600, padding: "0 2px", borderRadius: 2 }}>{s.text}</span>;
+        }
+        return null; // ins 不显示在左侧
+      } else {
+        if (s.type === "ins") {
+          return <span key={i} style={{ background: "rgba(0,168,112,0.18)", color: "var(--td-success-color)", fontWeight: 600, padding: "0 2px", borderRadius: 2 }}>{s.text}</span>;
+        }
+        return null; // del 不显示在右侧
+      }
+    });
+  };
+
+  /** 重复场景：相同片段高亮、差异片段淡化（左右各显示自己独有 + 共有） */
+  const renderDuplicateText = (side: "old" | "new") => {
+    return segs.map((s, i) => {
+      if (s.type === "equal") {
+        return <span key={i} style={{ background: "rgba(0,168,112,0.16)", color: "var(--td-success-color)", fontWeight: 500, padding: "0 2px", borderRadius: 2 }}>{s.text}</span>;
+      }
+      if (side === "old") {
+        if (s.type === "del") {
+          return <span key={i} style={{ color: "var(--td-text-color-placeholder)", opacity: 0.65 }}>{s.text}</span>;
+        }
+        return null;
+      } else {
+        if (s.type === "ins") {
+          return <span key={i} style={{ color: "var(--td-text-color-placeholder)", opacity: 0.65 }}>{s.text}</span>;
+        }
+        return null;
+      }
+    });
+  };
+
+  /** 关键差异点 / 重叠点（生产环境由 LLM 抽，本期 mock）——按 oldFactId 命中固定示例 */
+  const keyPoints = React.useMemo(() => buildKeyPoints(mode, oldFactId), [mode, oldFactId]);
+
+  /** 重叠率（重复模式专用） */
+  const overlapRate = React.useMemo(() => {
+    if (!isConflict) {
+      const equalLen = segs.filter((s) => s.type === "equal").reduce((a, s) => a + s.text.length, 0);
+      const total = Math.max(oldContent.length, newContent.length, 1);
+      return Math.round((equalLen / total) * 100);
+    }
+    return 0;
+  }, [segs, isConflict, oldContent, newContent]);
+
+  return (
+    <Dialog
+      visible={visible}
+      onClose={onClose}
+      header={isConflict ? "冲突事实对比" : "重复事实对比"}
+      width={780}
+      footer={<Button theme="primary" onClick={onClose}>关闭</Button>}
+    >
+      {/* 顶部：详情区 */}
+      <div style={{ padding: "10px 12px", background: bgColor, border: `1px solid ${borderClr}`, borderRadius: 6, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+          <Tag theme={isConflict ? "danger" : "warning"} variant="light" size="small">
+            {isConflict ? "⚠ 冲突" : "≈ 重复"}
+          </Tag>
+          <span style={{ fontSize: 13, fontWeight: 600, color: themeColor }}>{oldFactId}</span>
+          {!isConflict && (
+            <Tag theme="warning" variant="light" size="small">重叠率 {overlapRate}%</Tag>
+          )}
+        </div>
+        {extra && (
+          <div style={{ fontSize: 12, color: themeColor, lineHeight: 1.7 }}>{extra}</div>
+        )}
+      </div>
+
+      {/* 关键点列表 */}
+      {keyPoints.length > 0 && (
+        <div style={{ border: "1px solid var(--td-component-stroke)", borderRadius: 6, overflow: "hidden", marginBottom: 12 }}>
+          <div style={{ padding: "6px 10px", background: "var(--td-bg-color-secondarycontainer)", fontSize: 12, fontWeight: 500, color: "var(--td-text-color-secondary)", borderBottom: "1px solid var(--td-component-stroke)" }}>
+            {isConflict ? "关键差异点" : "主要重叠表述"}
+          </div>
+          <div style={{ padding: "8px 12px", background: "#fff" }}>
+            {keyPoints.map((kp, i) => (
+              <div key={i} style={{ fontSize: 12, lineHeight: 1.9, color: "var(--td-text-color-primary)" }}>
+                <span style={{ color: "var(--td-text-color-placeholder)", marginRight: 6 }}>·</span>
+                {isConflict ? (
+                  <>
+                    <strong>{kp.label}：</strong>
+                    <span style={{ background: "rgba(227,77,89,0.18)", color: "#c91c30", padding: "0 4px", borderRadius: 2, fontWeight: 500 }}>{kp.oldText}</span>
+                    <span style={{ color: "var(--td-text-color-placeholder)", margin: "0 6px" }}>↔</span>
+                    <span style={{ background: "rgba(0,168,112,0.18)", color: "var(--td-success-color)", padding: "0 4px", borderRadius: 2, fontWeight: 500 }}>{kp.newText}</span>
+                  </>
+                ) : (
+                  <>
+                    <strong>{kp.label}：</strong>
+                    <span style={{ background: "rgba(0,168,112,0.16)", color: "var(--td-success-color)", padding: "0 4px", borderRadius: 2, fontWeight: 500 }}>{kp.oldText}</span>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 双栏对比：高亮策略按 mode 切换 */}
+      <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ flex: 1, border: "1px solid var(--td-component-stroke)", borderRadius: 6, overflow: "hidden" }}>
+          <div style={{ padding: "6px 10px", background: "var(--td-bg-color-secondarycontainer)", fontSize: 12, fontWeight: 500, color: "var(--td-text-color-secondary)", borderBottom: "1px solid var(--td-component-stroke)", display: "flex", alignItems: "center", gap: 6 }}>
+            <Tag theme="default" variant="light" size="small">已有</Tag>
+            <span>已有事实 [{oldFactId}]</span>
+          </div>
+          <div style={{ padding: "10px 12px", fontSize: 13, lineHeight: 1.9, background: "#fff", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 240, overflowY: "auto" }}>
+            {isConflict ? renderConflictText("old") : renderDuplicateText("old")}
+          </div>
+        </div>
+        <div style={{ flex: 1, border: "1px solid var(--td-component-stroke)", borderRadius: 6, overflow: "hidden" }}>
+          <div style={{ padding: "6px 10px", background: "var(--td-bg-color-secondarycontainer)", fontSize: 12, fontWeight: 500, color: "var(--td-text-color-secondary)", borderBottom: "1px solid var(--td-component-stroke)", display: "flex", alignItems: "center", gap: 6 }}>
+            <Tag theme="primary" variant="light" size="small">新</Tag>
+            <span>新事实</span>
+          </div>
+          <div style={{ padding: "10px 12px", fontSize: 13, lineHeight: 1.9, background: "#fff", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 240, overflowY: "auto" }}>
+            {isConflict ? renderConflictText("new") : renderDuplicateText("new")}
+          </div>
+        </div>
+      </div>
+
+      {/* 图例 */}
+      <div style={{ marginTop: 10, fontSize: 11, color: "var(--td-text-color-placeholder)", display: "flex", gap: 14, flexWrap: "wrap" }}>
+        {isConflict ? (
+          <>
+            <span><span style={{ background: "rgba(227,77,89,0.18)", color: "#c91c30", padding: "1px 6px", borderRadius: 2, fontWeight: 600 }}>已有表述</span> 即将被新事实推翻</span>
+            <span><span style={{ background: "rgba(0,168,112,0.18)", color: "var(--td-success-color)", padding: "1px 6px", borderRadius: 2, fontWeight: 600 }}>新表述</span> 与已有事实矛盾</span>
+            <span style={{ color: "var(--td-text-color-placeholder)" }}>· 灰色 = 双方共识，不影响判断</span>
+          </>
+        ) : (
+          <>
+            <span><span style={{ background: "rgba(0,168,112,0.16)", color: "var(--td-success-color)", padding: "1px 6px", borderRadius: 2, fontWeight: 500 }}>重叠表述</span> 双方表意一致</span>
+            <span style={{ opacity: 0.65 }}>淡化部分 = 单边独有，可能为合并补充点</span>
+          </>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+/** 关键差异点 / 重叠表述（mock）—— 真实环境由 LLM 抽 */
+interface KeyPoint { label: string; oldText: string; newText: string; }
+function buildKeyPoints(mode: "conflict" | "duplicate", oldFactId: string): KeyPoint[] {
+  if (mode === "conflict" && oldFactId === "ID:37957") {
+    return [
+      { label: "激活方式",  oldText: "接触敌人后自动触发", newText: "可手动激活" },
+      { label: "触发条件",  oldText: "落地后处于隐形状态，接触到敌人后自动触发", newText: "落地后隐形，可手动激活，激活后从地面伸出藤蔓" },
+    ];
+  }
+  if (mode === "duplicate" && oldFactId === "ID:42010") {
+    return [
+      { label: "地点", oldText: "日落之城 A 点" , newText: "" },
+      { label: "技能", oldText: "剃刀藤蔓 + 弧光玫瑰" , newText: "" },
+      { label: "战术", oldText: "反弹布置陷阱 + 形成控制链" , newText: "" },
+    ];
+  }
+  return [];
+}
+
+// ─── 文件导入面板 ──────────────────────────────────────────────────────────────
+function FileImportPanel({
+  file, parseStatus, parseError, segments, loading, model,
+  setModel, setSegments, onFileSelect, onExtract, onReset,
+}: {
+  file: File | null;
+  parseStatus: "idle" | "parsing" | "parsed" | "error";
+  parseError: string;
+  segments: FileSegment[];
+  loading: boolean;
+  model: string;
+  setModel: (v: string) => void;
+  setSegments: React.Dispatch<React.SetStateAction<FileSegment[]>>;
+  onFileSelect: (f: File) => void;
+  onExtract: () => void;
+  onReset: () => void;
+}) {
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const fileTypeIcon = () => {
+    const ext = file?.name.split(".").pop()?.toLowerCase() || "";
+    const iconStyle = { fontSize: 18, color: "var(--td-brand-color)" };
+    if (ext === "pdf")  return <FilePdfIcon style={iconStyle} />;
+    if (ext === "docx") return <FileWordIcon style={iconStyle} />;
+    if (ext === "xlsx" || ext === "csv") return <FileExcelIcon style={iconStyle} />;
+    return <FileIcon style={iconStyle} />;
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  };
+
+  const pickedCount = segments.filter((s) => s.selected).length;
+  const allSelected = segments.length > 0 && pickedCount === segments.length;
+  const indeterminate = pickedCount > 0 && pickedCount < segments.length;
+
+  const toggleAll = () => {
+    setSegments((prev) => prev.map((s) => ({ ...s, selected: !allSelected })));
+  };
+  const toggleOne = (id: string) => {
+    setSegments((prev) => prev.map((s) => s.id === id ? { ...s, selected: !s.selected } : s));
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* 上传区 */}
+      {!file && (
+        <div
+          style={{
+            border: "2px dashed var(--td-component-stroke)",
+            borderRadius: 8,
+            padding: "32px 16px",
+            textAlign: "center",
+            cursor: "pointer",
+            background: "var(--td-bg-color-container-hover)",
+            transition: "all .2s",
+          }}
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const f = e.dataTransfer.files?.[0];
+            if (f) onFileSelect(f);
+          }}
+        >
+          <AttachIcon style={{ fontSize: 32, color: "var(--td-text-color-placeholder)", marginBottom: 8 }} />
+          <div style={{ fontSize: 14, color: "var(--td-text-color-primary)", marginBottom: 4 }}>
+            点击或拖拽文件到此处
+          </div>
+          <div style={{ fontSize: 12, color: "var(--td-text-color-secondary)" }}>
+            支持 PDF · Word · Excel · CSV · 纯文本
+          </div>
+          <div style={{ fontSize: 11, color: "var(--td-text-color-placeholder)", marginTop: 6 }}>
+            PDF / Word ≤ 20MB；Excel / CSV ≤ 5MB
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.docx,.xlsx,.csv,.txt"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onFileSelect(f);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      )}
+
+      {/* 文件信息 + 解析态 */}
+      {file && (
+        <div style={{
+          border: "1px solid var(--td-component-stroke)",
+          borderRadius: 8,
+          padding: "10px 12px",
+          background: "#fff",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {fileTypeIcon()}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {file.name}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--td-text-color-placeholder)" }}>
+                {formatSize(file.size)}
+                {parseStatus === "parsed"  && <span style={{ marginLeft: 8, color: "var(--td-success-color)" }}>✓ 解析完成（{segments.length} 个候选片段）</span>}
+                {parseStatus === "parsing" && <span style={{ marginLeft: 8, color: "var(--td-warning-color)" }}>解析中…</span>}
+                {parseStatus === "error"   && <span style={{ marginLeft: 8, color: "var(--td-error-color)" }}>✕ 解析失败</span>}
+              </div>
+            </div>
+            <Button variant="text" size="small" onClick={onReset}>重新选择</Button>
+          </div>
+
+          {parseStatus === "parsing" && (
+            <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--td-warning-color)" }}>
+              <Loading size="small" /> 正在解析文件结构，请稍候…
+            </div>
+          )}
+
+          {parseStatus === "error" && (
+            <div style={{ marginTop: 10, padding: "8px 10px", background: "rgba(227,77,89,0.06)", border: "1px solid rgba(227,77,89,0.2)", borderRadius: 4, fontSize: 12, color: "var(--td-error-color)" }}>
+              {parseError}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 候选片段列表 */}
+      {parseStatus === "parsed" && segments.length > 0 && (
+        <div style={{
+          border: "1px solid var(--td-component-stroke)",
+          borderRadius: 8,
+          background: "#fff",
+          overflow: "hidden",
+        }}>
+          {/* 头部 */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "8px 12px",
+            background: "var(--td-bg-color-secondarycontainer)",
+            borderBottom: "1px solid var(--td-component-stroke)",
+            fontSize: 12,
+          }}>
+            <Checkbox
+              checked={allSelected}
+              indeterminate={indeterminate}
+              onChange={toggleAll}
+            >
+              <span style={{ fontWeight: 500 }}>候选片段</span>
+            </Checkbox>
+            <span style={{ color: "var(--td-text-color-secondary)" }}>
+              已选 <strong style={{ color: "var(--td-brand-color)" }}>{pickedCount}</strong> / {segments.length}
+            </span>
+          </div>
+
+          {/* 列表 */}
+          <div style={{ maxHeight: 320, overflowY: "auto" }}>
+            {segments.map((s, idx) => (
+              <div
+                key={s.id}
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 8,
+                  padding: "8px 12px",
+                  borderBottom: idx === segments.length - 1 ? "none" : "1px solid var(--td-component-stroke)",
+                  background: s.selected ? "transparent" : "var(--td-bg-color-component-disabled)",
+                  opacity: s.selected ? 1 : 0.6,
+                }}
+              >
+                <Checkbox checked={s.selected} onChange={() => toggleOne(s.id)} style={{ flexShrink: 0, marginTop: 2 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: "var(--td-text-color-placeholder)", marginBottom: 3 }}>
+                    {s.location}
+                  </div>
+                  <div style={{ fontSize: 12, lineHeight: 1.6, color: "var(--td-text-color-primary)" }}>
+                    {s.text.length > 100 ? (
+                      <Tooltip content={s.text} overlayStyle={{ maxWidth: 480 }}>
+                        <span>{s.text.slice(0, 100)}…</span>
+                      </Tooltip>
+                    ) : s.text}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 配置 + 提取按钮 */}
+      {parseStatus === "parsed" && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
+          <Select
+            filterable value={model} onChange={(v) => setModel(v as string)}
+            options={[
+              { label: "deepseek-v3-2-251201", value: "deepseek-v3-2-251201" },
+              { label: "deepseek-v3-2-250101", value: "deepseek-v3-2-250101" },
+              { label: "gpt-4o",               value: "gpt-4o" },
+              { label: "claude-3.5-sonnet",    value: "claude-3.5-sonnet" },
+            ]}
+            style={{ flex: 1 }}
+          />
+          <Button
+            theme="primary"
+            loading={loading}
+            disabled={pickedCount === 0}
+            onClick={onExtract}
+            style={{ flexShrink: 0 }}
+          >
+            提取 {pickedCount} 个片段
+          </Button>
+        </div>
+      )}
+
+      {loading && (
+        <div style={{ fontSize: 12, color: "var(--td-brand-color)", display: "flex", alignItems: "center", gap: 6 }}>
+          <Loading size="small" /> 提取中，结果将出现在右侧审核区…
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 缓冲池操作日志 Dialog ─────────────────────────────────────────────────────
+function BufferLogDialog({
+  visible, onClose, logs, factTitle,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  logs: BufferLog[];
+  factTitle: string;
+}) {
+  // 倒序：最新的在最上面
+  const sortedLogs = [...logs].reverse();
+
+  const actionTheme: Record<BufferLog["action"], "primary" | "success" | "danger" | "warning" | "default"> = {
+    "创建": "primary",
+    "编辑": "primary",
+    "通过": "success",
+    "拒绝": "danger",
+    "撤回": "warning",
+    "实体丢弃": "default",
+    "实体恢复": "default",
+    "事件丢弃": "default",
+    "事件恢复": "default",
+    "冲突解除": "success",
+    "重复解除": "success",
+  };
+
+  return (
+    <Dialog
+      visible={visible}
+      onClose={onClose}
+      header="操作记录"
+      width={640}
+      footer={<Button theme="primary" onClick={onClose}>关闭</Button>}
+    >
+      <div style={{ fontSize: 12, color: "var(--td-text-color-secondary)", marginBottom: 10, padding: "6px 10px", background: "var(--td-bg-color-secondarycontainer)", borderRadius: 4 }}>
+        当前事实：{factTitle}
+      </div>
+      {sortedLogs.length === 0 ? (
+        <div style={{ padding: "40px 0", textAlign: "center", color: "var(--td-text-color-placeholder)", fontSize: 13 }}>
+          暂无操作记录
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 480, overflowY: "auto" }}>
+          {sortedLogs.map((log) => (
+            <div key={log.id} style={{
+              display: "flex", gap: 10, padding: "8px 10px",
+              border: "1px solid var(--td-component-stroke)", borderRadius: 6, background: "#fff",
+            }}>
+              <Tag theme={actionTheme[log.action] || "default"} variant="light" size="small" style={{ flexShrink: 0, alignSelf: "flex-start" }}>
+                {log.action}
+              </Tag>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: "var(--td-text-color-primary)", lineHeight: 1.6, wordBreak: "break-word" }}>
+                  {log.detail}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--td-text-color-placeholder)", marginTop: 3 }}>
+                  {log.operator} · {log.time}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Dialog>
+  );
+}
