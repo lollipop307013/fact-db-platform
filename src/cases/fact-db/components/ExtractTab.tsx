@@ -63,18 +63,21 @@ interface DuplicateRef {
 
 /** 建议新增的实体（与"添加实体"原型表单字段对齐）
  *  decision: keep=保留(默认入库) | discard=丢弃(置灰划线，可恢复)
+ *  tmpId: 提取时分配的临时 ID（如 tmp_ent_xxx），入库时由后端聚合去重并替换为正式 entity_id
  */
 interface NewEntitySuggestion {
   name: string;
   description: string;
   tags: string[];
   decision: "keep" | "discard";
+  tmpId?: string;
 }
 
 /** 建议新增的事件
  *  decision 只有两种结果：
  *    keep    = 保留（默认，事实入库时随之新增进事件库）
  *    discard = 丢弃（不入库，置灰划线展示，可恢复）
+ *  tmpId: 提取时分配的临时 ID（如 tmp_evt_xxx），入库时由后端聚合去重并替换为正式 event_id
  */
 interface NewEventSuggestion {
   name: string;
@@ -85,6 +88,7 @@ interface NewEventSuggestion {
   description: string;
   tags: string[];
   decision: "keep" | "discard";
+  tmpId?: string;
 }
 
 interface ExtractBatch {
@@ -125,9 +129,14 @@ interface FileSegment {
 /** 当前登录用户（demo 中固定，实际接入时由登录态注入） */
 const CURRENT_USER = "yzhinan(南勇志)";
 
+/** 临时 ID 计数器（mock 用，确保每次提取都生成唯一 tmpId） */
+let __tmpIdCounter = 0;
+const nextTmpEntId = () => `tmp_ent_${Date.now().toString(36)}_${++__tmpIdCounter}`;
+const nextTmpEvtId = () => `tmp_evt_${Date.now().toString(36)}_${++__tmpIdCounter}`;
+
 /** 把字符串数组快速转成 NewEntitySuggestion 数组（mock 用） */
 const mkNE = (names: string[]): NewEntitySuggestion[] =>
-  names.map((n) => ({ name: n, description: "", tags: [], decision: "keep" }));
+  names.map((n) => ({ name: n, description: "", tags: [], decision: "keep", tmpId: nextTmpEntId() }));
 
 /** 当前时间字符串（用于日志） */
 const nowStr = () => new Date().toLocaleString("zh-CN").replace(/\//g, "-");
@@ -145,6 +154,87 @@ const mkLog = (action: BufferLog["action"], detail: string, operator = CURRENT_U
 const initLogs = (operator: string, time: string): BufferLog[] => [
   { id: Math.floor(Math.random() * 100000), time, operator, action: "创建", detail: "AI 提取入缓冲池" },
 ];
+
+// 通用导出工具：把若干 (batch, fact) 对生成 CSV 并触发下载，返回下载文件名
+// - relatedEntities / relatedEvents 输出为 id:name 格式（已匹配实体带正式 ID）
+// - new_entity_* / new_event_* 动态展开，含 tmp_id（提取时分配的临时 ID，由后端聚合去重时替换为正式 ID）
+// - status 字段如实输出，不过滤；导入时由事实库按 status=已审核 准入
+const exportFactsToCSV = (
+  rows: Array<{ batch: ExtractBatch; fact: ExtractedFact }>,
+  fileSuffix = ""
+): string => {
+  const maxNewEntities = Math.max(0, ...rows.map((r) => r.fact.newEntities.filter((e) => e.decision !== "discard").length));
+  const maxNewEvents   = Math.max(0, ...rows.map((r) => r.fact.newEvents.filter((e) => e.decision !== "discard").length));
+
+  const entityNameToId = new Map<string, number>(mockEntities.map((e) => [e.title, e.id]));
+  const eventNameToId  = new Map<string, number>(mockEvents.map((e)  => [e.name, e.id]));
+  const formatRefList = (names: string[], dict: Map<string, number>) =>
+    names.map((n) => {
+      const id = dict.get(n);
+      return id ? `${id}:${n}` : `:${n}`;
+    }).join(", ");
+
+  const headers = [
+    "id", "title", "content", "category", "sourceType",
+    "source", "sourceUrl", "sourceContent",
+    "startTime", "endTime", "timeDesc",
+    "relatedEntities", "relatedEvents", "conflictIds", "status",
+  ];
+  for (let i = 1; i <= maxNewEntities; i++) {
+    headers.push(`new_entity_${i}`, `new_entity_${i}_tmp_id`, `new_entity_${i}_keep`, `new_entity_${i}_desc`, `new_entity_${i}_tags`);
+  }
+  for (let i = 1; i <= maxNewEvents; i++) {
+    headers.push(`new_event_${i}`, `new_event_${i}_tmp_id`, `new_event_${i}_keep`);
+  }
+
+  const escape = (s: string) => s.replace(/\r?\n/g, " ").replace(/"/g, "\"\"");
+  const data: string[][] = [headers];
+  rows.forEach(({ batch: b, fact: f }) => {
+    const row: string[] = [
+      "", "",
+      escape(f.content),
+      "", "",
+      b.extractor,
+      "",
+      b.batchId,
+      f.startTime || "",
+      f.endTime   || "",
+      f.timeDesc  || "",
+      formatRefList(f.entities, entityNameToId),
+      formatRefList(f.events,  eventNameToId),
+      f.conflict ? f.conflict.factId : "",
+      f.status,
+    ];
+    const newEnts = f.newEntities.filter((e) => e.decision !== "discard");
+    for (let i = 0; i < maxNewEntities; i++) {
+      const e = newEnts[i];
+      row.push(
+        e ? e.name : "",
+        e ? (e.tmpId || "") : "",
+        e ? "1" : "",
+        e ? escape(e.description || "") : "",
+        e ? e.tags.join(", ") : "",
+      );
+    }
+    const newEvs = f.newEvents.filter((e) => e.decision !== "discard");
+    for (let i = 0; i < maxNewEvents; i++) {
+      const e = newEvs[i];
+      row.push(e ? e.name : "", e ? (e.tmpId || "") : "", e ? "1" : "");
+    }
+    data.push(row);
+  });
+
+  const csv = data.map((row) => row.map((c) => `"${c}"`).join(",")).join("\r\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const filename = `fact-export-${new Date().toISOString().slice(0, 10)}${fileSuffix}.csv`;
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  return filename;
+};
 
 // ─── 冲突/重复检测 mock 库 ─────────────────────────────────────────────────────
 /** 已入库事实的"指纹库"。编辑保存后会重新基于关键词匹配，模拟"重新查冲突"。 */
@@ -305,10 +395,10 @@ const mockBatches: ExtractBatch[] = [
         content: "2026年4月23日至5月7日，游戏限时活动「深渊突袭季」开启，特工维斯获得专属活动皮肤「暗影执行者」，活动期间完成维斯英雄挑战任务可额外获得活动积分，积分可兑换限定喷漆及玩家卡。此外，「深海明珠」地图在本次活动期间加入竞技轮换池。",
         entities: ["维斯", "深海明珠", "英雄挑战任务", "积分"],
         newEntities: [
-          { name: "暗影执行者", description: "维斯专属活动皮肤，仅在「深渊突袭季」期间获得", tags: ["皮肤", "限定"], decision: "keep" },
-          { name: "活动积分", description: "深渊突袭季期间通过完成英雄挑战任务获得，可兑换限定道具", tags: ["积分", "活动"], decision: "keep" },
-          { name: "限定喷漆", description: "活动积分可兑换的喷漆道具", tags: ["道具", "限定"], decision: "keep" },
-          { name: "玩家卡", description: "活动积分可兑换的玩家卡道具", tags: ["道具"], decision: "keep" },
+          { name: "暗影执行者", description: "维斯专属活动皮肤，仅在「深渊突袭季」期间获得", tags: ["皮肤", "限定"], decision: "keep", tmpId: "tmp_ent_mock_1" },
+          { name: "活动积分", description: "深渊突袭季期间通过完成英雄挑战任务获得，可兑换限定道具", tags: ["积分", "活动"], decision: "keep", tmpId: "tmp_ent_mock_2" },
+          { name: "限定喷漆", description: "活动积分可兑换的喷漆道具", tags: ["道具", "限定"], decision: "keep", tmpId: "tmp_ent_mock_3" },
+          { name: "玩家卡", description: "活动积分可兑换的玩家卡道具", tags: ["道具"], decision: "keep", tmpId: "tmp_ent_mock_4" },
         ],
         events: [],
         newEvents: [
@@ -321,6 +411,7 @@ const mockBatches: ExtractBatch[] = [
             description: "维斯获得专属皮肤「暗影执行者」，完成英雄挑战任务可获活动积分，积分可兑换限定喷漆及玩家卡；深海明珠地图加入竞技轮换池",
             tags: ["限时活动", "皮肤", "积分"],
             decision: "keep",
+            tmpId: "tmp_evt_mock_1",
           },
         ],
         startTime: "2026-04-23 00:00:00",
@@ -409,6 +500,44 @@ const mockBatches: ExtractBatch[] = [
       },
     ],
   },
+  // 文件导入批次（演示用：来自白皮书 PDF）
+  {
+    batchId: "BATCH-20260506-0003",
+    extractedAt: "2026-05-06 11:15:44",
+    extractor: "zhaoweilin(林兆伟)",
+    model: "deepseek-v3-2-251201",
+    mode: "文件解析",
+    sourceText: "来源文件：无畏契约-维斯角色白皮书.pdf\n\n【第 1 章 / 1.2 技能机制】\n弧光玫瑰：维斯的基础技能，可部署在墙面或地面，部署后处于隐形状态，再次激活时可致盲所有注视该墙面的敌人，并提供闪光命中的提示音。该技能可回收并重新部署。\n\n【第 1 章 / 1.3 技能机制】\n剃刀藤蔓：可投掷的陷阱装置，落地后隐形，可手动激活，激活后从地面伸出藤蔓，对范围内移动的敌人造成持续伤害与减速效果，伴随较大声响；可通过墙面反弹进行布置。\n\n【第 2 章 / 2.1 地图配合】\n深海明珠地图 A 点防守时，建议在 A 主门、水下出口拐角等位置部署弧光玫瑰，当判断敌人即将进点时激活，配合队友反清。\n\n【第 2 章 / 2.2 战术建议】\n维斯擅长防守回合的预判布防，弧光玫瑰与剃刀藤蔓可形成控制链，有效封锁关键通道。",
+    batchLabel: "[白皮书] 无畏契约-维斯角色白皮书.pdf",
+    expanded: true,
+    archived: false,
+    facts: [
+      {
+        factId: "f_003_1",
+        content: "弧光玫瑰是维斯的基础技能，可部署在墙面或地面，部署后处于隐形状态，再次激活时可致盲所有注视该墙面的敌人，并提供闪光命中的提示音。该技能可回收并重新部署。",
+        entities: ["维斯", "弧光玫瑰", "技能", "隐形"],
+        newEntities: mkNE(["提示音"]),
+        events: [],
+        newEvents: [],
+        startTime: "", endTime: "", timeDesc: "",
+        conflict: null, duplicate: null,
+        status: "待审核",
+        logs: initLogs("zhaoweilin(林兆伟)", "2026-05-06 11:15:44"),
+      },
+      {
+        factId: "f_003_2",
+        content: "剃刀藤蔓是维斯的陷阱技能，落地后隐形，可手动激活，激活后从地面伸出藤蔓，对范围内移动的敌人造成持续伤害与减速效果，伴随较大声响；可通过墙面反弹进行布置。",
+        entities: ["维斯", "剃刀藤蔓", "技能", "隐形", "减速"],
+        newEntities: [],
+        events: [],
+        newEvents: [],
+        startTime: "", endTime: "", timeDesc: "",
+        conflict: null, duplicate: null,
+        status: "待审核",
+        logs: initLogs("zhaoweilin(林兆伟)", "2026-05-06 11:15:44"),
+      },
+    ],
+  },
 ];
 
 // ─── 主组件 ────────────────────────────────────────────────────────────────────
@@ -418,6 +547,8 @@ export default function ExtractTab() {
   const [model, setModel] = useState("deepseek-v3-2-251201");
   const [loading, setLoading] = useState(false);
   const [batches, setBatches] = useState<ExtractBatch[]>(mockBatches);
+  /** 左侧提取输入区是否已收起 */
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
   /** 提取人筛选：all=全部（共享），mine=只看自己的 */
   const [scope, setScope] = useState<"all" | "mine">("all");
   /** 输入方式：text=文本粘贴，file=文件导入 */
@@ -448,6 +579,16 @@ export default function ExtractTab() {
   const pendingCount  = visibleBatches.reduce((a, b) => a + b.facts.filter((f) => f.status === "待审核").length, 0);
   const approvedCount = visibleBatches.reduce((a, b) => a + b.facts.filter((f) => f.status === "已审核").length, 0);
   const totalCount    = visibleBatches.reduce((a, b) => a + b.facts.length, 0);
+  /** 符合入库条件：批次内全部条目已标注（无待审核）的批次中的「已审核」条目数 */
+  const commitableCount = visibleBatches
+    .filter((b) => !b.archived && !b.facts.some((f) => f.status === "待审核"))
+    .reduce((a, b) => a + b.facts.filter((f) => f.status === "已审核").length, 0);
+  /** 阻塞入库的批次：含已审核但仍有待审核的批次数（用于 tooltip 提示） */
+  const blockedBatchCount = visibleBatches.filter((b) =>
+    !b.archived
+    && b.facts.some((f) => f.status === "已审核")
+    && b.facts.some((f) => f.status === "待审核")
+  ).length;
 
   // 5. 多选相关
   const selectedCount = selectedFactIds.size;
@@ -602,7 +743,7 @@ export default function ExtractTab() {
         batchId: newBatchId,
         extractedAt: new Date().toLocaleString("zh-CN").replace(/\//g, "-"),
         extractor: CURRENT_USER,
-        sourceText: `[来自文件] ${file?.name} · 解析得到 ${segments.length} 个候选片段，本次提取 ${picked.length} 个`,
+        sourceText: `来源文件：${file?.name}\n\n` + picked.map((s) => `【${s.location}】\n${s.text}`).join("\n\n"),
         batchLabel: `[${fileType}] ${file?.name}`,
         model,
         mode: "文件解析",
@@ -628,34 +769,68 @@ export default function ExtractTab() {
   };
 
 
-  /** 批量入库：把"已审核"条目入事实库，对应批次自动归档（commit 原因） */
+  /** 批量入库：批次必须全部审核完毕（无待审核）才能入库，入库后自动归档；否则拒绝执行+toast 提示 */
   const handleCommitAll = () => {
     if (approvedCount === 0) { MessagePlugin.warning("暂无已审核条目可入库"); return; }
+    if (commitableCount === 0) {
+      MessagePlugin.warning({
+        content: `${blockedBatchCount} 个批次仍有待审核条目，请审核完毕后再入库`,
+        duration: 3500,
+      });
+      return;
+    }
     const scopeLabel = scope === "mine" ? "我提取的" : "当前视图";
+
+    // 候选批次：当前视图、未归档、含已审核
+    const candidateBatches = batches.filter((b) => {
+      if (b.archived) return false;
+      if (scope === "mine" && b.extractor !== CURRENT_USER) return false;
+      return b.facts.some((f) => f.status === "已审核");
+    });
+    // 校验：所有候选批次必须全部条目已标注（无待审核），否则拒绝
+    const blockedBatches = candidateBatches.filter((b) => b.facts.some((f) => f.status === "待审核"));
+    if (blockedBatches.length > 0) {
+      MessagePlugin.warning({
+        content: `${blockedBatches.length} 个批次仍有待审核条目，请审核完毕后再入库`,
+        duration: 3500,
+      });
+      return;
+    }
+
+    const readyCount = candidateBatches.length;
+    const readyApprovedCount = candidateBatches.reduce((a, b) => a + b.facts.filter((f) => f.status === "已审核").length, 0);
+
     const dlg = DialogPlugin.confirm({
-      header: "批量入库确认",
-      body: `将${scopeLabel} ${approvedCount} 条已审核事实入库（直接以「已审核」状态进入事实库）。\n相关批次将自动归档到「已归档」区，可随时查看历史。`,
+      header: "入库确认",
+      body: (
+        <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+          <div>将{scopeLabel} <strong style={{ color: "var(--td-success-color)" }}>{readyApprovedCount} 条「已审核」事实</strong>入库（直接以「已审核」状态进入事实库）。</div>
+          <div style={{ marginTop: 6 }}>涉及 <strong>{readyCount}</strong> 个批次，全部条目已标注完成，入库后自动归档到「已归档」区。</div>
+        </div>
+      ) as any,
       theme: "warning",
-      confirmBtn: { content: "确认入库并归档", theme: "primary" },
+      confirmBtn: { content: "确认入库", theme: "primary" },
+      cancelBtn: { content: "取消", variant: "outline" },
       onConfirm: () => {
         const now = nowStr();
         setBatches((prev) => prev.map((b) => {
-          // 只对当前可见、且包含已审核条目的批次操作
           if (b.archived) return b;
           if (scope === "mine" && b.extractor !== CURRENT_USER) return b;
           if (!b.facts.some((f) => f.status === "已审核")) return b;
+          if (b.facts.some((f) => f.status === "待审核")) return b;
+          const updatedFacts = b.facts.map((f) => f.status === "已审核"
+            ? { ...f, logs: [...f.logs, mkLog("通过", `批量入库 → 事实库（已审核）`)] }
+            : f);
           return {
             ...b,
             archived: true,
             archiveReason: "committed",
             archivedAt: now,
             archivedBy: CURRENT_USER,
-            facts: b.facts.map((f) => f.status === "已审核"
-              ? { ...f, logs: [...f.logs, mkLog("通过", `批量入库 → 事实库（已审核）`)] }
-              : f),
+            facts: updatedFacts,
           };
         }));
-        MessagePlugin.success(`${approvedCount} 条事实已入库，相关批次已归档`);
+        MessagePlugin.success(`${readyApprovedCount} 条事实已入库，${readyCount} 个批次已归档`);
         clearSelection();
         dlg.destroy();
       },
@@ -723,102 +898,76 @@ export default function ExtractTab() {
     });
   };
 
-  /** 导出 Excel：选中条目所在批次中「已审核」的条目导出，字段与事实库导入模板对齐，自动归档 */
+  /** 导出 Excel：选中条目原样导出（含 status 字段），不过滤、不归档；归档由入库流程负责 */
   const handleExport = () => {
     if (selectedCount === 0) { MessagePlugin.warning("请先勾选事实条目"); return; }
-    // 找出选中条目涉及的批次
-    const involvedBatchIds = new Set<string>();
-    batches.forEach((b) => {
-      if (b.facts.some((f) => selectedFactIds.has(f.factId))) involvedBatchIds.add(b.batchId);
-    });
-    if (involvedBatchIds.size === 0) return;
 
-    // 统计：涉及批次中已审核的条目数（已拒绝自动跳过）
-    const involvedBatches = batches.filter((b) => involvedBatchIds.has(b.batchId));
-    const approvedFacts = involvedBatches.flatMap((b) => b.facts.filter((f) => f.status === "已审核"));
-    const rejectedCount = involvedBatches.flatMap((b) => b.facts.filter((f) => f.status === "已拒绝")).length;
-    const pendingCount  = involvedBatches.flatMap((b) => b.facts.filter((f) => f.status === "待审核")).length;
+    // 收集选中条目（保留批次顺序，每条带所属批次信息）
+    const selectedRows: Array<{ batch: ExtractBatch; fact: ExtractedFact }> = [];
+    batches.forEach((b) => {
+      b.facts.forEach((f) => {
+        if (selectedFactIds.has(f.factId)) selectedRows.push({ batch: b, fact: f });
+      });
+    });
+    if (selectedRows.length === 0) return;
+
+    // 状态分组统计（仅用于弹窗预览）
+    const cntByStatus = selectedRows.reduce<Record<string, number>>((a, { fact }) => {
+      a[fact.status] = (a[fact.status] || 0) + 1; return a;
+    }, {});
+    const involvedBatchIds = new Set(selectedRows.map((r) => r.batch.batchId));
 
     const dlg = DialogPlugin.confirm({
       header: "导出为 Excel",
       body: (
         <div style={{ fontSize: 13, lineHeight: 1.8 }}>
-          <div>涉及 <strong>{involvedBatchIds.size}</strong> 个批次，共 <strong>{involvedBatches.reduce((a, b) => a + b.facts.length, 0)}</strong> 条事实：</div>
+          <div>将导出选中的 <strong>{selectedRows.length}</strong> 条事实（涉及 {involvedBatchIds.size} 个批次）：</div>
           <div style={{ margin: "6px 0 10px", paddingLeft: 8 }}>
-            <div>✅ <strong style={{ color: "var(--td-success-color)" }}>{approvedFacts.length} 条「已审核」</strong>将导出</div>
-            {rejectedCount > 0 && <div>✗ <strong style={{ color: "var(--td-text-color-placeholder)" }}>{rejectedCount} 条「已拒绝」</strong>自动跳过</div>}
-            {pendingCount  > 0 && <div>⏳ <strong style={{ color: "var(--td-warning-color)" }}>{pendingCount} 条「待审核」</strong>自动跳过</div>}
+            {cntByStatus["已审核"] > 0 && <div>✅ 已审核 <strong style={{ color: "var(--td-success-color)" }}>{cntByStatus["已审核"]}</strong> 条</div>}
+            {cntByStatus["待审核"] > 0 && <div>⏳ 待审核 <strong style={{ color: "var(--td-warning-color)" }}>{cntByStatus["待审核"]}</strong> 条</div>}
+            {cntByStatus["已拒绝"] > 0 && <div>✗ 已拒绝 <strong style={{ color: "var(--td-text-color-placeholder)" }}>{cntByStatus["已拒绝"]}</strong> 条</div>}
           </div>
-          {approvedFacts.length === 0
-            ? <div style={{ color: "var(--td-error-color)", fontWeight: 500 }}>当前批次中无已审核条目，无法导出。</div>
-            : <div style={{ color: "var(--td-text-color-secondary)", fontSize: 12 }}>
-                导出格式与事实库导入模板相同，可直接导入已审核内容。<br />
-                导出后相关批次将自动归档，可随时取消归档恢复处理。
-              </div>
-          }
+          <div style={{ color: "var(--td-text-color-secondary)", fontSize: 12 }}>
+            导出选中条目的原始数据快照（含状态字段）。<br />
+            导入事实库时会按 status 过滤，仅「已审核」条目入库。<br />
+            批次内全部条目已标注完成时一并归档；仍有待审核条目的批次会保留在待处理区。
+          </div>
         </div>
       ) as any,
-      theme: approvedFacts.length === 0 ? "warning" : "info",
-      confirmBtn: approvedFacts.length === 0
-        ? { content: "知道了", theme: "primary" }
-        : { content: "确认导出并归档", theme: "primary" },
-      cancelBtn: approvedFacts.length === 0 ? false as any : { content: "取消", variant: "outline" },
+      theme: "info",
+      confirmBtn: { content: "确认导出", theme: "primary" },
+      cancelBtn: { content: "取消", variant: "outline" },
       onConfirm: () => {
-        if (approvedFacts.length === 0) { dlg.destroy(); return; }
+        const filename = exportFactsToCSV(selectedRows);
 
-        // 生成符合事实库导入模板的 CSV（与 ImportDialog.handleDownloadTemplate 字段一致）
-        const headers = [
-          "id", "title", "content", "category", "sourceType",
-          "source", "sourceUrl", "sourceContent",
-          "startTime", "endTime", "timeDesc",
-          "relatedEntities", "relatedEvents", "conflictIds", "status",
-        ];
-        const rows: string[][] = [headers];
-        involvedBatches.forEach((b) => {
-          b.facts.filter((f) => f.status === "已审核").forEach((f) => {
-            rows.push([
-              "",                                                        // id（留空，入库时系统分配）
-              "",                                                        // title（缓冲池无标题字段，导入后人工补充）
-              f.content.replace(/\r?\n/g, " ").replace(/"/g, "\"\""),   // content
-              "",                                                        // category
-              "",                                                        // sourceType
-              b.extractor,                                               // source（用提取人作来源）
-              "",                                                        // sourceUrl
-              b.batchId,                                                 // sourceContent（存批次 ID，便于溯源）
-              f.startTime || "",                                         // startTime
-              f.endTime   || "",                                         // endTime
-              f.timeDesc  || "",                                         // timeDesc
-              f.entities.join(", "),                                     // relatedEntities（名称，导入时人工替换为 ID）
-              f.events.join(", "),                                       // relatedEvents
-              f.conflict ? f.conflict.factId : "",                       // conflictIds
-              "已审核",                                                  // status
-            ]);
-          });
-        });
-        const csv = rows.map((row) => row.map((c) => `"${c}"`).join(",")).join("\r\n");
-        const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `fact-export-${new Date().toISOString().slice(0, 10)}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-
-        // 归档涉及的批次
+        // 记录导出日志；批次内全部条目已标注（无待审核）则归档（exported），否则保留在待处理区
         const now = nowStr();
+        const exportedFactIds = new Set(selectedRows.map((r) => r.fact.factId));
+        let archivedBatchCount = 0;
         setBatches((prev) => prev.map((b) => {
           if (!involvedBatchIds.has(b.batchId)) return b;
-          return {
-            ...b,
-            archived: true,
-            archiveReason: "exported",
-            archivedAt: now,
-            archivedBy: CURRENT_USER,
-            exportedAt: now,
-            facts: b.facts.map((f) => ({ ...f, logs: [...f.logs, mkLog("编辑", `导出为 Excel（${a.download}）`)] })),
-          };
+          const updatedFacts = b.facts.map((f) => exportedFactIds.has(f.factId)
+            ? { ...f, logs: [...f.logs, mkLog("编辑", `导出为 Excel（${filename}）`)] }
+            : f);
+          const allDone = !b.facts.some((f) => f.status === "待审核");
+          if (allDone) {
+            archivedBatchCount++;
+            return {
+              ...b,
+              archived: true,
+              archiveReason: "exported",
+              archivedAt: now,
+              archivedBy: CURRENT_USER,
+              exportedAt: now,
+              facts: updatedFacts,
+            };
+          }
+          return { ...b, exportedAt: now, facts: updatedFacts };
         }));
-        MessagePlugin.success(`已导出 ${approvedFacts.length} 条已审核事实，${involvedBatchIds.size} 个批次已自动归档`);
+        const archiveMsg = archivedBatchCount > 0 ? `，${archivedBatchCount} 个批次已归档` : "";
+        const remainCount = involvedBatchIds.size - archivedBatchCount;
+        const remainMsg  = remainCount > 0 ? `；${remainCount} 个批次仍有待审核条目，保留在待处理区` : "";
+        MessagePlugin.success(`已导出 ${selectedRows.length} 条事实${archiveMsg}${remainMsg}`);
         clearSelection();
         dlg.destroy();
       },
@@ -887,10 +1036,18 @@ export default function ExtractTab() {
 
 
   return (
-    <div className="factdb-tab-content" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+    <div className="factdb-tab-content" style={{ display: "flex", gap: 0, alignItems: "flex-start" }}>
 
-      {/* ── 左侧：提取输入（flex:3）── */}
-      <div style={{ flex: 3, display: "flex", flexDirection: "column", gap: 0 }}>
+      {/* ── 左侧：提取输入（flex:3，可收起）── */}
+      <div style={{
+        flex: leftCollapsed ? 0 : 3,
+        minWidth: leftCollapsed ? 0 : undefined,
+        overflow: leftCollapsed ? "hidden" : undefined,
+        width: leftCollapsed ? 0 : undefined,
+        transition: "flex .2s, width .2s",
+        display: "flex", flexDirection: "column", gap: 0,
+        paddingRight: leftCollapsed ? 0 : 16,
+      }}>
         <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>事实提取</div>
 
         {/* 输入方式切换 */}
@@ -980,11 +1137,50 @@ export default function ExtractTab() {
         )}
       </div>
 
-      {/* 分割线 */}
-      <div style={{ width: 1, background: "var(--td-component-stroke)", flexShrink: 0 }} />
+      {/* 分割条（可点击收起/展开左侧） */}
+      <div style={{
+        width: 14,
+        flexShrink: 0,
+        alignSelf: "stretch",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: leftCollapsed ? "flex-start" : "flex-end",
+        margin: "0 10px",
+        position: "relative",
+      }}>
+        {/* 细线：贴合小条直角边，收起时渐隐 */}
+        <div style={{
+          position: "absolute",
+          top: 0, bottom: 0,
+          [leftCollapsed ? "left" : "right"]: 0,
+          width: 0.5,
+          background: "rgba(0,0,0,0.08)",
+          opacity: leftCollapsed ? 0 : 1,
+          transition: "opacity .2s",
+        }} />
+        {/* 小条按钮 */}
+        <div
+          onClick={() => setLeftCollapsed(!leftCollapsed)}
+          style={{
+            position: "relative", zIndex: 1,
+            width: 14, height: 48,
+            background: "var(--td-bg-color-secondarycontainer)",
+            borderRadius: leftCollapsed ? "0 6px 6px 0" : "6px 0 0 6px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer",
+            transition: "background .15s",
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = "var(--td-bg-color-component)")}
+          onMouseLeave={e => (e.currentTarget.style.background = "var(--td-bg-color-secondarycontainer)")}
+        >
+          <span style={{ fontSize: 13, color: "var(--td-text-color-placeholder)", lineHeight: 1, userSelect: "none" }}>
+            {leftCollapsed ? "›" : "‹"}
+          </span>
+        </div>
+      </div>
 
-      {/* ── 右侧：审核区（flex:7）── */}
-      <div style={{ flex: 7, display: "flex", flexDirection: "column" }}>
+      {/* ── 右侧：审核区（flex:7，收起时占满）── */}
+      <div style={{ flex: 7, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {/* 顶部：标题 + 帮助 + 提取人筛选 */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexShrink: 0, flexWrap: "wrap", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -993,19 +1189,20 @@ export default function ExtractTab() {
               placement="bottom-left"
               overlayStyle={{ maxWidth: 420 }}
               content={
-                <div style={{ fontSize: 12, lineHeight: 1.8 }}>
+                <div style={{ fontSize: 12, lineHeight: 1.6 }}>
                   <div style={{ fontWeight: 600, marginBottom: 4 }}>使用说明</div>
                   <div style={{ marginBottom: 6, color: "var(--td-text-color-placeholder)" }}>
-                    AI 提取的事实先进入「待处理」区暂存，审核通过后可批量入库或导出为 Excel。所有人共享可见。
+                    AI 提取的事实先进入「待处理」区暂存，审核完毕后批量入库或导出 Excel。所有人共享可见。
                   </div>
                   <div style={{ fontWeight: 500, marginTop: 6 }}>使用步骤：</div>
                   <ol style={{ margin: "4px 0 0 18px", padding: 0 }}>
                     <li>左侧粘贴文本或上传文件，选择提取模式后点「提取事实」</li>
                     <li>右侧「待处理」区按批次查看提取结果，逐条核对内容、关联实体/事件、冲突/重复</li>
-                    <li>可单条「通过/拒绝」，也可勾选多条批量操作；已标注的条目不会被批量动作覆盖</li>
-                    <li>「整批通过」= 把当前批次所有「待审核」条目改为已审核（已标注的不影响）</li>
-                    <li>三种归档方式：<br />· 批量入库 → 自动归档（事实直接入库为「已审核」状态）<br />· 导出为 Excel → 自动归档（标记「已导出」）<br />· 手动归档（适合放凉一段时间再回来看）</li>
-                    <li>「已归档」区可查历史，必要时取消归档恢复处理</li>
+                    <li>可单条「通过/拒绝/撤回」，也可勾选多条批量操作；已标注的条目不会被批量动作覆盖</li>
+                    <li>「整批通过/拒绝」处理批次内的全部条目；若已有部分审核，按钮变为「剩余全部通过/拒绝」，已标注的不变</li>
+                    <li><strong>入库规则：</strong>批次内全部条目已标注（无待审核）才能入库，否则点击会被 toast 拦截；已审核入事实库、已拒绝留痕，批次随即归档（committed）。已入库的批次不可恢复</li>
+                    <li><strong>导出规则：</strong>导出 = 数据快照，选什么导什么（含 status 字段）。批次全部标注完毕时一并归档（exported），可"恢复审核"返回待处理区；仍有待审核条目则不归档</li>
+                    <li>「已归档」区可查历史，已拒绝条目默认隐藏可切换显示</li>
                   </ol>
                 </div>
               }
@@ -1086,7 +1283,7 @@ export default function ExtractTab() {
             {selectedCount === 0 ? (
               // 未多选：提示说明
               <span style={{ fontSize: 12, color: "var(--td-text-color-placeholder)" }}>
-                勾选条目或批次头进行批量操作；也可对单条点「通过/拒绝/撤回」
+                勾选多个条目或批次头进行批量操作
               </span>
             ) : (
               // 多选中：显示数量 + 操作按钮
@@ -1110,11 +1307,13 @@ export default function ExtractTab() {
         )}
 
         {/* 顶部右侧固定操作（在操作栏之外仍可见） */}
-        {view === "pending" && approvedCount > 0 && selectedCount === 0 && (
+        {view === "pending" && commitableCount > 0 && selectedCount === 0 && (
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10, flexShrink: 0 }}>
-            <Button theme="primary" size="small" onClick={handleCommitAll}>
-              已审核全部入库 · 自动归档（{approvedCount}）
-            </Button>
+            <Tooltip content={`当前有已完全审核的批次可入库（共 ${commitableCount} 条已审核事实）`}>
+              <Button theme="primary" size="small" onClick={handleCommitAll}>
+                入库 / 归档已完全审核批次
+              </Button>
+            </Tooltip>
           </div>
         )}
 
@@ -1168,6 +1367,8 @@ function BatchCard({
   onUnarchive: (batchId: string) => void;
 }) {
   const [sourceVisible, setSourceVisible] = useState(false);
+  /** 已归档批次默认隐藏「已拒绝」条目（数据保留为训练资产，但视觉清爽） */
+  const [showRejectedInArchive, setShowRejectedInArchive] = useState(false);
   const pending  = batch.facts.filter((f) => f.status === "待审核").length;
   const approved = batch.facts.filter((f) => f.status === "已审核").length;
   const rejected = batch.facts.filter((f) => f.status === "已拒绝").length;
@@ -1177,6 +1378,69 @@ function BatchCard({
     : "已归档";
   /** 该批次是否有任何条目被多选 */
   const batchHasSelection = batch.facts.some((f) => selectedFactIds.has(f.factId));
+  /** 进度条比例：审核完毕（通过+拒绝）/ 总数 */
+  const total = batch.facts.length;
+  const reviewed = approved + rejected;
+  const progressPct = total === 0 ? 0 : Math.round((reviewed / total) * 100);
+  /** 是否全部审核完毕（可入库/归档） */
+  const fullyReviewed = !isArchived && total > 0 && pending === 0;
+
+  /** 单批次导出为 Excel：把整个批次的 fact 一次性导出，主要给已归档批次提供独立导出入口 */
+  const handleExportThisBatch = () => {
+    const rows = batch.facts.map((f) => ({ batch, fact: f }));
+    if (rows.length === 0) { MessagePlugin.warning("批次内无事实可导出"); return; }
+    const filename = exportFactsToCSV(rows, `_${batch.batchId}`);
+    setBatches((prev) => prev.map((b) => b.batchId !== batch.batchId ? b : {
+      ...b,
+      exportedAt: nowStr(),
+      facts: b.facts.map((f) => ({ ...f, logs: [...f.logs, mkLog("编辑", `导出此批次为 Excel（${filename}）`)] })),
+    }));
+    MessagePlugin.success(`已导出批次 ${batch.batchId}（${rows.length} 条事实）`);
+  };
+
+  /** 入库/归档此批次：将「已审核」入事实库，批次归档（archiveReason=committed） */
+  const handleCommitBatch = () => {
+    if (!fullyReviewed) return;
+    const approvedInBatch = batch.facts.filter((f) => f.status === "已审核").length;
+    const rejectedInBatch = batch.facts.filter((f) => f.status === "已拒绝").length;
+    const dlg = DialogPlugin.confirm({
+      header: "入库 / 归档此批次",
+      body: (
+        <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+          <div>批次 <strong>{batch.batchId}</strong> 全部 {total} 条事实已标注完毕：</div>
+          <div style={{ paddingLeft: 8, marginTop: 4 }}>
+            <div>✅ 已审核 <strong style={{ color: "var(--td-success-color)" }}>{approvedInBatch}</strong> 条 → 入事实库</div>
+            {rejectedInBatch > 0 && <div>✗ 已拒绝 <strong style={{ color: "var(--td-text-color-placeholder)" }}>{rejectedInBatch}</strong> 条 → 留痕不入库</div>}
+          </div>
+          <div style={{ marginTop: 6, color: "var(--td-text-color-secondary)", fontSize: 12 }}>
+            执行后批次自动归档到「已归档」区，可随时查看历史。
+          </div>
+        </div>
+      ) as any,
+      theme: "warning",
+      confirmBtn: { content: "确认入库", theme: "primary" },
+      cancelBtn: { content: "取消", variant: "outline" },
+      onConfirm: () => {
+        const now = nowStr();
+        setBatches((prev) => prev.map((b) => {
+          if (b.batchId !== batch.batchId) return b;
+          return {
+            ...b,
+            archived: true,
+            archiveReason: "committed",
+            archivedAt: now,
+            archivedBy: CURRENT_USER,
+            facts: b.facts.map((f) => f.status === "已审核"
+              ? { ...f, logs: [...f.logs, mkLog("通过", "入库 → 事实库（已审核）")] }
+              : f),
+          };
+        }));
+        MessagePlugin.success(`${approvedInBatch} 条事实已入库，批次已归档`);
+        dlg.destroy();
+      },
+      onCancel: () => dlg.destroy(),
+    });
+  };
 
   const toggle = () => setBatches((prev) => prev.map((b) => b.batchId === batch.batchId ? { ...b, expanded: !b.expanded } : b));
 
@@ -1240,9 +1504,24 @@ function BatchCard({
   };
 
   const handleDeleteBatch = () => {
+    const approvedInBatch = batch.facts.filter((f) => f.status === "已审核").length;
+    const hasApproved = approvedInBatch > 0 && !batch.archived;
     const dlg = DialogPlugin.confirm({
-      header: "删除批次", body: `确认删除此批次全部 ${batch.facts.length} 条事实？`, theme: "danger",
-      confirmBtn: { content: "删除", theme: "danger" },
+      header: "删除批次",
+      body: hasApproved ? (
+        <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+          <div style={{ color: "var(--td-error-color)", fontWeight: 500 }}>
+            ⚠️ 此批次内有 {approvedInBatch} 条「已审核」事实尚未入库
+          </div>
+          <div style={{ marginTop: 6 }}>删除后这些已审核内容将一并丢失，无法恢复。</div>
+          <div style={{ marginTop: 4, color: "var(--td-text-color-secondary)", fontSize: 12 }}>
+            建议先完成剩余条目的审核并入库后，再删除批次。
+          </div>
+          <div style={{ marginTop: 6 }}>确认删除该批次全部 {batch.facts.length} 条事实？</div>
+        </div>
+      ) as any : `确认删除此批次全部 ${batch.facts.length} 条事实？`,
+      theme: "danger",
+      confirmBtn: { content: hasApproved ? "仍要删除" : "删除", theme: "danger" },
       onConfirm: () => { setBatches((prev) => prev.filter((b) => b.batchId !== batch.batchId)); dlg.destroy(); },
       onCancel: () => dlg.destroy(),
     });
@@ -1307,31 +1586,99 @@ function BatchCard({
           {approved > 0 && <Tag theme="primary" variant="light" size="small">已审核 {approved}</Tag>}
           {rejected > 0 && <Tag theme="default" variant="light" size="small">已拒绝 {rejected}</Tag>}
           <Button variant="text" size="small" onClick={(e) => { e.stopPropagation(); setSourceVisible(!sourceVisible); }}>
-            {sourceVisible ? "收起原文" : "查看原文"}
+            {sourceVisible
+              ? "收起"
+              : batch.mode === "文件解析" ? "查看来源内容" : "查看原文"}
           </Button>
-          {/* 全局无多选时显示整批通过/拒绝；有任何多选时统一走顶部批量操作栏 */}
-          {!isArchived && !hasAnySelection && pending > 0 && (
-            <Tooltip content="对当前批次所有「待审核」条目执行通过；已标注的条目不受影响（取差集通过）">
-              <Button variant="outline" size="small" theme="primary" onClick={(e) => { e.stopPropagation(); handleBatchApprove(); }}>
-                整批通过
+          {/* 全局无多选时显示整批操作；有任何多选时统一走顶部批量操作栏 */}
+          {!isArchived && !hasAnySelection && pending > 0 && (() => {
+            const hasReviewed = approved + rejected > 0;
+            const approveLabel = hasReviewed ? "剩余全部通过" : "整批通过";
+            const rejectLabel  = hasReviewed ? "剩余全部拒绝" : "整批拒绝";
+            const approveTip   = hasReviewed
+              ? `把剩余 ${pending} 条待审核条目改为已审核（已标注的不变）`
+              : `把当前批次 ${pending} 条全部改为已审核`;
+            const rejectTip    = hasReviewed
+              ? `把剩余 ${pending} 条待审核条目改为已拒绝（已标注的不变）`
+              : `把当前批次 ${pending} 条全部改为已拒绝`;
+            return (
+              <>
+                <Tooltip content={approveTip}>
+                  <Button variant="outline" size="small" theme="primary" style={{ minWidth: 96 }} onClick={(e) => { e.stopPropagation(); handleBatchApprove(); }}>
+                    {approveLabel}
+                  </Button>
+                </Tooltip>
+                <Tooltip content={rejectTip}>
+                  <Button variant="outline" size="small" theme="danger" style={{ minWidth: 96 }} onClick={(e) => { e.stopPropagation(); handleBatchReject(); }}>{rejectLabel}</Button>
+                </Tooltip>
+              </>
+            );
+          })()}
+          {/* 全部审核完毕：入库/归档此批次（替代整批通过/拒绝） */}
+          {fullyReviewed && !hasAnySelection && (
+            <Tooltip content={`入库本批次 ${approved} 条已审核事实，并归档此批次`}>
+              <Button variant="outline" size="small" theme="success" onClick={(e) => { e.stopPropagation(); handleCommitBatch(); }}>
+                入库 / 归档批次
               </Button>
             </Tooltip>
           )}
-          {!isArchived && !hasAnySelection && pending > 0 && (
-            <Button variant="outline" size="small" theme="danger" onClick={(e) => { e.stopPropagation(); handleBatchReject(); }}>整批拒绝</Button>
-          )}
-          {/* 已归档批次：取消归档 */}
+          {/* 已归档批次：committed 不可取消（已入库，缓冲池只读快照）；exported 允许取消归档恢复审核 */}
           {isArchived && (
-            <Tooltip content={`归档原因：${archiveLabel}${batch.archivedAt ? ` · ${batch.archivedAt}` : ""}`}>
-              <Button variant="outline" size="small" theme="warning" onClick={(e) => { e.stopPropagation(); onUnarchive(batch.batchId); }}>取消归档</Button>
+            <Tooltip content={`导出此批次（${batch.facts.length} 条）为 Excel 快照`}>
+              <Button variant="text" size="small" theme="primary" icon={<AttachIcon />} onClick={(e) => { e.stopPropagation(); handleExportThisBatch(); }}>
+                导出
+              </Button>
             </Tooltip>
           )}
-          {/* 全局无多选时显示删除批次 */}
+          {isArchived && batch.archiveReason === "committed" && (
+            <Tooltip content={`此批次已入库到事实库${batch.archivedAt ? `（${batch.archivedAt}）` : ""}，缓冲池保留只读快照，如需修改请到事实库操作`}>
+              <Tag theme="success" variant="light" size="small" style={{ cursor: "default" }}>
+                🔒 已入库不可恢复
+              </Tag>
+            </Tooltip>
+          )}
+          {isArchived && batch.archiveReason !== "committed" && (
+            <Tooltip content={`归档原因：${archiveLabel}${batch.archivedAt ? ` · ${batch.archivedAt}` : ""}；外部审核如有变故可恢复重审`}>
+              <Button variant="outline" size="small" theme="warning" onClick={(e) => { e.stopPropagation(); onUnarchive(batch.batchId); }}>恢复审核</Button>
+            </Tooltip>
+          )}
+          {/* 全局无多选时显示删除批次（× 图标） */}
           {!hasAnySelection && (
-            <Button variant="text" size="small" theme="danger" onClick={(e) => { e.stopPropagation(); handleDeleteBatch(); }}>删除批次</Button>
+            <Tooltip content="删除整个批次">
+              <Button
+                variant="text"
+                size="small"
+                theme="danger"
+                shape="square"
+                icon={<CloseIcon />}
+                onClick={(e) => { e.stopPropagation(); handleDeleteBatch(); }}
+              />
+            </Tooltip>
           )}
         </div>
       </div>
+
+      {/* 批次头底部审核进度条（仅非归档批次，紧贴批次头） */}
+      {!isArchived && total > 0 && (
+        <Tooltip content={fullyReviewed
+          ? `已全部审核（${approved} 通过 / ${rejected} 拒绝）`
+          : `审核进度 ${reviewed} / ${total}（待审核 ${pending}）`}>
+          <div style={{
+            height: 2,
+            width: "100%",
+            background: "var(--td-bg-color-component-disabled)",
+            position: "relative",
+            cursor: "default",
+          }}>
+            <div style={{
+              height: "100%",
+              width: `${progressPct}%`,
+              background: fullyReviewed ? "var(--td-success-color)" : "var(--td-brand-color)",
+              transition: "width .25s, background .25s",
+            }} />
+          </div>
+        </Tooltip>
+      )}
 
       {/* 原文 */}
       {sourceVisible && (
@@ -1340,38 +1687,48 @@ function BatchCard({
         </div>
       )}
 
-      {/* 事实列表 */}
-      {batch.expanded && batch.facts.map((fact, idx) => (
-        <FactRow
-          key={fact.factId}
-          fact={fact}
-          index={idx}
-          isLast={idx === batch.facts.length - 1}
-          readOnly={isArchived}
-          selected={selectedFactIds.has(fact.factId)}
-          onToggleSelect={() => onToggleSelect(fact.factId)}
-          onApprove={() => updateFact(fact.factId, { status: "已审核" }, mkLog("通过", "审核通过"))}
-          onReject={() => updateFact(fact.factId, { status: "已拒绝" }, mkLog("拒绝", "审核拒绝"))}
-          onRevoke={() => updateFact(fact.factId, { status: "待审核" }, mkLog("撤回", `从「${fact.status}」撤回到「待审核」`))}
-          onDelete={() => deleteFact(fact.factId)}
-          onUpdate={(patch, log) => updateFact(fact.factId, patch, log)}
-        />
-      ))}
-
-      {/* 归档流程说明（待处理批次展开时展示在底部） */}
-      {!isArchived && batch.expanded && (
-        <div style={{
-          padding: "7px 12px",
-          borderTop: "1px solid var(--td-component-stroke)",
-          background: "var(--td-bg-color-secondarycontainer)",
-          fontSize: 11,
-          color: "var(--td-text-color-placeholder)",
-          display: "flex", alignItems: "center", gap: 6,
-        }}>
-          <span style={{ fontWeight: 500, color: "var(--td-text-color-secondary)" }}>归档触发条件：</span>
-          全部条目审核完毕后点「已审核全部入库」自动归档；或勾选条目后「导出为 Excel」自动归档。不支持手动归档。
-        </div>
-      )}
+      {/* 事实列表（已归档批次默认隐藏「已拒绝」） */}
+      {batch.expanded && (() => {
+        const visibleFacts = isArchived && !showRejectedInArchive
+          ? batch.facts.filter((f) => f.status !== "已拒绝")
+          : batch.facts;
+        return (
+          <>
+            {visibleFacts.map((fact, idx) => (
+              <FactRow
+                key={fact.factId}
+                fact={fact}
+                index={idx}
+                isLast={idx === visibleFacts.length - 1}
+                readOnly={isArchived}
+                selected={selectedFactIds.has(fact.factId)}
+                onToggleSelect={() => onToggleSelect(fact.factId)}
+                onApprove={() => updateFact(fact.factId, { status: "已审核" }, mkLog("通过", "审核通过"))}
+                onReject={() => updateFact(fact.factId, { status: "已拒绝" }, mkLog("拒绝", "审核拒绝"))}
+                onRevoke={() => updateFact(fact.factId, { status: "待审核" }, mkLog("撤回", `从「${fact.status}」撤回到「待审核」`))}
+                onDelete={() => deleteFact(fact.factId)}
+                onUpdate={(patch, log) => updateFact(fact.factId, patch, log)}
+              />
+            ))}
+            {/* 已归档批次：已拒绝隐藏开关（仅当存在已拒绝条目时显示） */}
+            {isArchived && rejected > 0 && (
+              <div style={{
+                padding: "6px 12px",
+                borderTop: "1px solid var(--td-component-stroke)",
+                background: "#fafafa",
+                fontSize: 11,
+                color: "var(--td-text-color-placeholder)",
+                display: "flex", alignItems: "center", gap: 6,
+              }}>
+                <span>{showRejectedInArchive ? `当前显示全部条目（含 ${rejected} 条已拒绝）` : `已隐藏 ${rejected} 条已拒绝条目（数据保留，可作训练资产）`}</span>
+                <Button variant="text" size="small" onClick={() => setShowRejectedInArchive(!showRejectedInArchive)}>
+                  {showRejectedInArchive ? "隐藏已拒绝" : `显示已拒绝（${rejected}）`}
+                </Button>
+              </div>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
@@ -1928,7 +2285,7 @@ function FactEditDrawer({
                 );
               })}
               <Button variant="outline" size="small" theme="warning" icon={<AddIcon />}
-                onClick={() => setNewEntities([...newEntities, { name: "", description: "", tags: [], decision: "keep" }])}>
+                onClick={() => setNewEntities([...newEntities, { name: "", description: "", tags: [], decision: "keep", tmpId: nextTmpEntId() }])}>
                 添加新实体
               </Button>
             </FormItem>
@@ -2033,7 +2390,7 @@ function FactEditDrawer({
                 );
               })}
               <Button variant="outline" size="small" theme="warning" icon={<AddIcon />}
-                onClick={() => setNewEvents([...newEvents, { name: "", eventType: "活动", startTime: "", endTime: "", timeDesc: "", description: "", tags: [], decision: "keep" }])}>
+                onClick={() => setNewEvents([...newEvents, { name: "", eventType: "活动", startTime: "", endTime: "", timeDesc: "", description: "", tags: [], decision: "keep", tmpId: nextTmpEvtId() }])}>
                 添加新事件
               </Button>
             </FormItem>

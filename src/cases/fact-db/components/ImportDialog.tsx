@@ -277,7 +277,10 @@ export default function ImportDialog({ visible, title, onClose }: ImportDialogPr
                 <div>• <strong>有 ID</strong>：按 ID 匹配，覆盖原有记录的全部字段</div>
                 <div>• <strong>空 ID</strong>：系统自动分配新 ID，作为新记录入库</div>
                 <div>• 每个 ID 在库内唯一，同一文件内不允许出现重复 ID</div>
-                <div>• 导入后状态默认为「待审核」，需经审核后方可上线</div>
+                <div>• <strong>状态过滤（事实导入）</strong>：仅导入 status 为「已审核」的行，「待审核」/「已拒绝」自动跳过；status 为空时按「待审核」入库</div>
+                <div>• <strong>关联实体/事件解析</strong>：<code>relatedEntities</code> / <code>relatedEvents</code> 字段以 <code>id:name</code> 格式存储（多值逗号分隔），导入时优先按 ID 关联；ID 缺失时按名称走 recall 模糊匹配，若仍未命中会进入下方"新实体处理"流程</div>
+                <div>• <strong>新实体/事件去重聚合</strong>：检测到 <code>new_entity_*</code> / <code>new_event_*</code> 列且 <code>_keep=1</code> 时，后端按 <strong>名称聚合</strong>跨批次重复建议（不同 <code>tmp_id</code> 同名 → 合并为一个），分配正式 ID 后再关联事实；同名实体若已在库中则直接复用</div>
+                <div>• <strong>tmp_id 的作用</strong>：仅用于跨字段在同一文件内引用（如事实的 <code>relatedEntities</code> 临时引用同文件的新实体），导入完成后被替换为正式 ID，不入库</div>
               </div>
             </div>
 
