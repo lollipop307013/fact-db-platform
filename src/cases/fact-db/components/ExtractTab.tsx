@@ -1191,7 +1191,7 @@ export default function ExtractTab() {
               content={
                 <div style={{ fontSize: 12, lineHeight: 1.6 }}>
                   <div style={{ fontWeight: 600, marginBottom: 4 }}>使用说明</div>
-                  <div style={{ marginBottom: 6, color: "var(--td-text-color-placeholder)" }}>
+                  <div style={{ marginBottom: 6, opacity: 0.85 }}>
                     AI 提取的事实先进入「待处理」区暂存，审核完毕后批量入库或导出 Excel。所有人共享可见。
                   </div>
                   <div style={{ fontWeight: 500, marginTop: 6 }}>使用步骤：</div>
