@@ -63,21 +63,23 @@ interface DuplicateRef {
 
 /** 建议新增的实体（与"添加实体"原型表单字段对齐）
  *  decision: keep=保留(默认入库) | discard=丢弃(置灰划线，可恢复)
- *  tmpId: 提取时分配的临时 ID（如 tmp_ent_xxx），入库时由后端聚合去重并替换为正式 entity_id
+ *  reservedEntityId: 审核者点"保留"时通过 POST /api/entities 创建拿到的正式 entity_id；
+ *  仅在 decision=keep 且实际已落库后填充。未填充表示尚未确认（导出时拦截）。
  */
 interface NewEntitySuggestion {
   name: string;
   description: string;
   tags: string[];
   decision: "keep" | "discard";
-  tmpId?: string;
+  reservedEntityId?: number;
 }
 
 /** 建议新增的事件
  *  decision 只有两种结果：
  *    keep    = 保留（默认，事实入库时随之新增进事件库）
  *    discard = 丢弃（不入库，置灰划线展示，可恢复）
- *  tmpId: 提取时分配的临时 ID（如 tmp_evt_xxx），入库时由后端聚合去重并替换为正式 event_id
+ *  reservedEventId: 审核者点"保留"时通过 POST /api/events 创建拿到的正式 event_id；
+ *  仅在 decision=keep 且实际已落库后填充。
  */
 interface NewEventSuggestion {
   name: string;
@@ -88,7 +90,7 @@ interface NewEventSuggestion {
   description: string;
   tags: string[];
   decision: "keep" | "discard";
-  tmpId?: string;
+  reservedEventId?: number;
 }
 
 interface ExtractBatch {
@@ -129,14 +131,16 @@ interface FileSegment {
 /** 当前登录用户（demo 中固定，实际接入时由登录态注入） */
 const CURRENT_USER = "yzhinan(南勇志)";
 
-/** 临时 ID 计数器（mock 用，确保每次提取都生成唯一 tmpId） */
-let __tmpIdCounter = 0;
-const nextTmpEntId = () => `tmp_ent_${Date.now().toString(36)}_${++__tmpIdCounter}`;
-const nextTmpEvtId = () => `tmp_evt_${Date.now().toString(36)}_${++__tmpIdCounter}`;
+/** 模拟"调 POST /api/entities 后分配的正式 entity_id"递增计数器（避开 mock 已用的 90001~90004 / 80001） */
+let __mockReservedEntityId = 90100;
+const allocReservedEntityId = () => ++__mockReservedEntityId;
+let __mockReservedEventId = 80100;
+const allocReservedEventId = () => ++__mockReservedEventId;
 
-/** 把字符串数组快速转成 NewEntitySuggestion 数组（mock 用） */
+/** 把字符串数组快速转成 NewEntitySuggestion 数组（mock 用）
+ *  默认 decision=keep + 立即分配 reservedEntityId（模拟 entities/recall 已确认到正式 ID） */
 const mkNE = (names: string[]): NewEntitySuggestion[] =>
-  names.map((n) => ({ name: n, description: "", tags: [], decision: "keep", tmpId: nextTmpEntId() }));
+  names.map((n) => ({ name: n, description: "", tags: [], decision: "keep", reservedEntityId: allocReservedEntityId() }));
 
 /** 当前时间字符串（用于日志） */
 const nowStr = () => new Date().toLocaleString("zh-CN").replace(/\//g, "-");
@@ -156,71 +160,79 @@ const initLogs = (operator: string, time: string): BufferLog[] => [
 ];
 
 // 通用导出工具：把若干 (batch, fact) 对生成 CSV 并触发下载，返回下载文件名
-// - relatedEntities / relatedEvents 输出为 id:name 格式（已匹配实体带正式 ID）
-// - new_entity_* / new_event_* 动态展开，含 tmp_id（提取时分配的临时 ID，由后端聚合去重时替换为正式 ID）
-// - status 字段如实输出，不过滤；导入时由事实库按 status=已审核 准入
+// v2.0 字段全面对齐后端 POST /api/facts 真实字段（snake_case）
+// - entity_ids / event_ids 输出为正式 ID 数组（逗号分隔），含已审核保留的 reservedEntityId/reservedEventId
+// - review_status 取后端值：approved / pending / deleted
+// - 不再输出 new_entity_*/new_event_* tmp_id 列：新实体在审核保留时已通过 POST /api/entities 创建并合并到 entity_ids 中
 const exportFactsToCSV = (
   rows: Array<{ batch: ExtractBatch; fact: ExtractedFact }>,
   fileSuffix = ""
 ): string => {
-  const maxNewEntities = Math.max(0, ...rows.map((r) => r.fact.newEntities.filter((e) => e.decision !== "discard").length));
-  const maxNewEvents   = Math.max(0, ...rows.map((r) => r.fact.newEvents.filter((e) => e.decision !== "discard").length));
-
+  // 中文 status → 后端 review_status 取值映射
+  const mapReviewStatus = (zh: string): string => {
+    if (zh === "已审核") return "approved";
+    if (zh === "已拒绝") return "deleted";
+    return "pending";
+  };
+  // 名称 → 正式 ID 字典（mock 演示），真实环境应来自 entities/recall 与新建实体响应
   const entityNameToId = new Map<string, number>(mockEntities.map((e) => [e.title, e.id]));
   const eventNameToId  = new Map<string, number>(mockEvents.map((e)  => [e.name, e.id]));
-  const formatRefList = (names: string[], dict: Map<string, number>) =>
-    names.map((n) => {
-      const id = dict.get(n);
-      return id ? `${id}:${n}` : `:${n}`;
-    }).join(", ");
+  // 收集本条事实最终要落库的 entity_ids / event_ids（已匹配 + 审核保留的新实体）
+  const collectEntityIds = (f: ExtractedFact): number[] => {
+    const ids: number[] = [];
+    f.entities.forEach((n) => {
+      const id = entityNameToId.get(n);
+      if (id) ids.push(id);
+    });
+    f.newEntities.forEach((e) => {
+      if (e.decision === "keep" && e.reservedEntityId) ids.push(e.reservedEntityId);
+    });
+    return Array.from(new Set(ids));
+  };
+  const collectEventIds = (f: ExtractedFact): number[] => {
+    const ids: number[] = [];
+    f.events.forEach((n) => {
+      const id = eventNameToId.get(n);
+      if (id) ids.push(id);
+    });
+    f.newEvents.forEach((e) => {
+      if (e.decision === "keep" && e.reservedEventId) ids.push(e.reservedEventId);
+    });
+    return Array.from(new Set(ids));
+  };
 
+  // 字段对齐 POST /api/facts（仅含首期 zh 列；多语言列由开关控制后续扩展）
   const headers = [
-    "id", "title", "content", "category", "sourceType",
-    "source", "sourceUrl", "sourceContent",
-    "startTime", "endTime", "timeDesc",
-    "relatedEntities", "relatedEvents", "conflictIds", "status",
+    "fact_id", "title", "fact_text", "category_id",
+    "source_type", "source", "source_url", "source_content",
+    "start_time", "end_time", "time_description",
+    "entity_ids", "event_ids",
+    "contradicting_fact_ids", "duplicate_fact_ids",
+    "review_status", "parent_game_id",
   ];
-  for (let i = 1; i <= maxNewEntities; i++) {
-    headers.push(`new_entity_${i}`, `new_entity_${i}_tmp_id`, `new_entity_${i}_keep`, `new_entity_${i}_desc`, `new_entity_${i}_tags`);
-  }
-  for (let i = 1; i <= maxNewEvents; i++) {
-    headers.push(`new_event_${i}`, `new_event_${i}_tmp_id`, `new_event_${i}_keep`);
-  }
 
   const escape = (s: string) => s.replace(/\r?\n/g, " ").replace(/"/g, "\"\"");
   const data: string[][] = [headers];
   rows.forEach(({ batch: b, fact: f }) => {
     const row: string[] = [
-      "", "",
-      escape(f.content),
-      "", "",
-      b.extractor,
-      "",
-      b.batchId,
-      f.startTime || "",
-      f.endTime   || "",
-      f.timeDesc  || "",
-      formatRefList(f.entities, entityNameToId),
-      formatRefList(f.events,  eventNameToId),
-      f.conflict ? f.conflict.factId : "",
-      f.status,
+      "",                                      // fact_id（入库时分配）
+      "",                                      // title
+      escape(f.content),                       // fact_text
+      "",                                      // category_id（导入后人工归类）
+      "extract_text",                          // source_type
+      b.extractor,                             // source（提取人）
+      "",                                      // source_url
+      b.batchId,                               // source_content（批次 ID 回溯）
+      f.startTime || "",                       // start_time
+      f.endTime   || "",                       // end_time
+      f.timeDesc  || "",                       // time_description
+      collectEntityIds(f).join(","),           // entity_ids
+      collectEventIds(f).join(","),            // event_ids
+      f.conflict ? f.conflict.factId : "",     // contradicting_fact_ids
+      "",                                      // duplicate_fact_ids（mock 暂未维护）
+      mapReviewStatus(f.status),               // review_status
+      "21116",                                 // parent_game_id（mock 默认游戏）
     ];
-    const newEnts = f.newEntities.filter((e) => e.decision !== "discard");
-    for (let i = 0; i < maxNewEntities; i++) {
-      const e = newEnts[i];
-      row.push(
-        e ? e.name : "",
-        e ? (e.tmpId || "") : "",
-        e ? "1" : "",
-        e ? escape(e.description || "") : "",
-        e ? e.tags.join(", ") : "",
-      );
-    }
-    const newEvs = f.newEvents.filter((e) => e.decision !== "discard");
-    for (let i = 0; i < maxNewEvents; i++) {
-      const e = newEvs[i];
-      row.push(e ? e.name : "", e ? (e.tmpId || "") : "", e ? "1" : "");
-    }
     data.push(row);
   });
 
@@ -395,10 +407,10 @@ const mockBatches: ExtractBatch[] = [
         content: "2026年4月23日至5月7日，游戏限时活动「深渊突袭季」开启，特工维斯获得专属活动皮肤「暗影执行者」，活动期间完成维斯英雄挑战任务可额外获得活动积分，积分可兑换限定喷漆及玩家卡。此外，「深海明珠」地图在本次活动期间加入竞技轮换池。",
         entities: ["维斯", "深海明珠", "英雄挑战任务", "积分"],
         newEntities: [
-          { name: "暗影执行者", description: "维斯专属活动皮肤，仅在「深渊突袭季」期间获得", tags: ["皮肤", "限定"], decision: "keep", tmpId: "tmp_ent_mock_1" },
-          { name: "活动积分", description: "深渊突袭季期间通过完成英雄挑战任务获得，可兑换限定道具", tags: ["积分", "活动"], decision: "keep", tmpId: "tmp_ent_mock_2" },
-          { name: "限定喷漆", description: "活动积分可兑换的喷漆道具", tags: ["道具", "限定"], decision: "keep", tmpId: "tmp_ent_mock_3" },
-          { name: "玩家卡", description: "活动积分可兑换的玩家卡道具", tags: ["道具"], decision: "keep", tmpId: "tmp_ent_mock_4" },
+          { name: "暗影执行者", description: "维斯专属活动皮肤，仅在「深渊突袭季」期间获得", tags: ["皮肤", "限定"], decision: "keep", reservedEntityId: 90001 },
+          { name: "活动积分", description: "深渊突袭季期间通过完成英雄挑战任务获得，可兑换限定道具", tags: ["积分", "活动"], decision: "keep", reservedEntityId: 90002 },
+          { name: "限定喷漆", description: "活动积分可兑换的喷漆道具", tags: ["道具", "限定"], decision: "keep", reservedEntityId: 90003 },
+          { name: "玩家卡", description: "活动积分可兑换的玩家卡道具", tags: ["道具"], decision: "keep", reservedEntityId: 90004 },
         ],
         events: [],
         newEvents: [
@@ -411,7 +423,7 @@ const mockBatches: ExtractBatch[] = [
             description: "维斯获得专属皮肤「暗影执行者」，完成英雄挑战任务可获活动积分，积分可兑换限定喷漆及玩家卡；深海明珠地图加入竞技轮换池",
             tags: ["限时活动", "皮肤", "积分"],
             decision: "keep",
-            tmpId: "tmp_evt_mock_1",
+            reservedEventId: 80001,
           },
         ],
         startTime: "2026-04-23 00:00:00",
@@ -898,7 +910,7 @@ export default function ExtractTab() {
     });
   };
 
-  /** 导出 Excel：选中条目原样导出（含 status 字段），不过滤、不归档；归档由入库流程负责 */
+  /** 导出 Excel：v2.0 字段对齐后端真实接口（snake_case），entity_ids/event_ids 输出正式 ID 数组 */
   const handleExport = () => {
     if (selectedCount === 0) { MessagePlugin.warning("请先勾选事实条目"); return; }
 
@@ -910,6 +922,20 @@ export default function ExtractTab() {
       });
     });
     if (selectedRows.length === 0) return;
+
+    // v2.0 校验：所有"保留"的新建议实体/事件必须已通过 POST /api/entities|events 拿到正式 ID（reservedEntityId/reservedEventId）
+    // 否则导出文件的 entity_ids/event_ids 不完整，无法直接回导入入库
+    const unconfirmed = selectedRows.filter(({ fact }) =>
+      fact.newEntities.some((e) => e.decision === "keep" && !e.reservedEntityId) ||
+      fact.newEvents.some((e) => e.decision === "keep" && !e.reservedEventId)
+    );
+    if (unconfirmed.length > 0) {
+      MessagePlugin.warning({
+        content: `${unconfirmed.length} 条事实存在尚未确认的新建议实体/事件，请先在审核区确认后再导出`,
+        duration: 4000,
+      });
+      return;
+    }
 
     // 状态分组统计（仅用于弹窗预览）
     const cntByStatus = selectedRows.reduce<Record<string, number>>((a, { fact }) => {
@@ -923,13 +949,13 @@ export default function ExtractTab() {
         <div style={{ fontSize: 13, lineHeight: 1.8 }}>
           <div>将导出选中的 <strong>{selectedRows.length}</strong> 条事实（涉及 {involvedBatchIds.size} 个批次）：</div>
           <div style={{ margin: "6px 0 10px", paddingLeft: 8 }}>
-            {cntByStatus["已审核"] > 0 && <div>✅ 已审核 <strong style={{ color: "var(--td-success-color)" }}>{cntByStatus["已审核"]}</strong> 条</div>}
-            {cntByStatus["待审核"] > 0 && <div>⏳ 待审核 <strong style={{ color: "var(--td-warning-color)" }}>{cntByStatus["待审核"]}</strong> 条</div>}
-            {cntByStatus["已拒绝"] > 0 && <div>✗ 已拒绝 <strong style={{ color: "var(--td-text-color-placeholder)" }}>{cntByStatus["已拒绝"]}</strong> 条</div>}
+            {cntByStatus["已审核"] > 0 && <div>✅ 已通过（approved）<strong style={{ color: "var(--td-success-color)" }}>{cntByStatus["已审核"]}</strong> 条</div>}
+            {cntByStatus["待审核"] > 0 && <div>⏳ 待审核（pending）<strong style={{ color: "var(--td-warning-color)" }}>{cntByStatus["待审核"]}</strong> 条</div>}
+            {cntByStatus["已拒绝"] > 0 && <div>✗ 已拒绝（deleted）<strong style={{ color: "var(--td-text-color-placeholder)" }}>{cntByStatus["已拒绝"]}</strong> 条</div>}
           </div>
           <div style={{ color: "var(--td-text-color-secondary)", fontSize: 12 }}>
-            导出选中条目的原始数据快照（含状态字段）。<br />
-            导入事实库时会按 status 过滤，仅「已审核」条目入库。<br />
+            导出字段对齐 POST /api/facts（fact_text、entity_ids、event_ids、review_status 等 snake_case）。<br />
+            导入事实库时按 review_status 过滤，仅 approved 入库。<br />
             批次内全部条目已标注完成时一并归档；仍有待审核条目的批次会保留在待处理区。
           </div>
         </div>
@@ -1850,12 +1876,22 @@ function FactRow({
                       e.tags.length > 0 && `标签：${e.tags.join(", ")}`,
                     ].filter(Boolean).join("\n");
                     const toggleDecision = () => {
-                      const next: "keep" | "discard" = isDiscarded ? "keep" : "discard";
-                      const updated = fact.newEntities.map((x, j) => j === ei ? { ...x, decision: next } : x);
-                      onUpdate(
-                        { newEntities: updated },
-                        mkLog(next === "discard" ? "实体丢弃" : "实体恢复", `${next === "discard" ? "丢弃" : "恢复"}建议新增实体「${e.name}」`)
-                      );
+                      if (isDiscarded) {
+                        // 恢复 → 分配 reservedEntityId（mock 调 POST /api/entities）
+                        const id = e.reservedEntityId || allocReservedEntityId();
+                        const updated = fact.newEntities.map((x, j) => j === ei ? { ...x, decision: "keep" as const, reservedEntityId: id } : x);
+                        onUpdate(
+                          { newEntities: updated },
+                          mkLog("实体恢复", `恢复建议新增实体「${e.name}」（entity_id=${id}）`)
+                        );
+                      } else {
+                        // 丢弃 → 清掉 reservedEntityId
+                        const updated = fact.newEntities.map((x, j) => j === ei ? { ...x, decision: "discard" as const, reservedEntityId: undefined } : x);
+                        onUpdate(
+                          { newEntities: updated },
+                          mkLog("实体丢弃", `丢弃建议新增实体「${e.name}」`)
+                        );
+                      }
                     };
                     return (
                       <Tooltip key={e.name + ei} content={isDiscarded ? `已丢弃「${e.name}」，点击 × 可恢复` : tip}>
@@ -1924,12 +1960,13 @@ function FactRow({
                           <span style={{ flex: 1 }} />
                           {isDiscarded ? (
                             <Button variant="text" size="small" theme="primary" onClick={() => {
-                              const updated = fact.newEvents.map((x, j) => j === i ? { ...x, decision: "keep" as const } : x);
-                              onUpdate({ newEvents: updated }, mkLog("事件恢复", `恢复建议新增事件「${ne.name}」`));
+                              const id = ne.reservedEventId || allocReservedEventId();
+                              const updated = fact.newEvents.map((x, j) => j === i ? { ...x, decision: "keep" as const, reservedEventId: id } : x);
+                              onUpdate({ newEvents: updated }, mkLog("事件恢复", `恢复建议新增事件「${ne.name}」（event_id=${id}）`));
                             }}>恢复</Button>
                           ) : (
                             <Button variant="text" size="small" theme="danger" onClick={() => {
-                              const updated = fact.newEvents.map((x, j) => j === i ? { ...x, decision: "discard" as const } : x);
+                              const updated = fact.newEvents.map((x, j) => j === i ? { ...x, decision: "discard" as const, reservedEventId: undefined } : x);
                               onUpdate({ newEvents: updated }, mkLog("事件丢弃", `丢弃建议新增事件「${ne.name}」`));
                             }}>丢弃</Button>
                           )}
@@ -2246,6 +2283,13 @@ function FactEditDrawer({
                 const isDiscarded = entity.decision === "discard";
                 const updateEntity = (patch: Partial<NewEntitySuggestion>) =>
                   setNewEntities(newEntities.map((x, j) => j === i ? { ...x, ...patch } : x));
+                /** 保留：模拟调 POST /api/entities 创建实体并拿到 entity_id；
+                 *  丢弃：清掉 reservedEntityId，事实将不关联此实体 */
+                const setKeep = () => {
+                  const id = entity.reservedEntityId || allocReservedEntityId();
+                  updateEntity({ decision: "keep", reservedEntityId: id });
+                };
+                const setDiscard = () => updateEntity({ decision: "discard", reservedEntityId: undefined });
                 const removeEntity = () =>
                   setNewEntities(newEntities.filter((_, j) => j !== i));
                 return (
@@ -2260,9 +2304,9 @@ function FactEditDrawer({
                       {isDiscarded && <Tag theme="default" variant="light" size="small">已丢弃</Tag>}
                       <span style={{ flex: 1 }} />
                       {isDiscarded ? (
-                        <Button variant="text" size="small" theme="primary" onClick={() => updateEntity({ decision: "keep" })}>恢复</Button>
+                        <Button variant="text" size="small" theme="primary" onClick={setKeep}>恢复</Button>
                       ) : (
-                        <Button variant="text" size="small" theme="danger" onClick={() => updateEntity({ decision: "discard" })}>丢弃</Button>
+                        <Button variant="text" size="small" theme="danger" onClick={setDiscard}>丢弃</Button>
                       )}
                       <Button variant="text" size="small" theme="danger" icon={<CloseIcon />} onClick={removeEntity} />
                     </div>
@@ -2285,7 +2329,7 @@ function FactEditDrawer({
                 );
               })}
               <Button variant="outline" size="small" theme="warning" icon={<AddIcon />}
-                onClick={() => setNewEntities([...newEntities, { name: "", description: "", tags: [], decision: "keep", tmpId: nextTmpEntId() }])}>
+                onClick={() => setNewEntities([...newEntities, { name: "", description: "", tags: [], decision: "keep" }])}>
                 添加新实体
               </Button>
             </FormItem>
@@ -2316,6 +2360,12 @@ function FactEditDrawer({
                 const isDiscarded = ne.decision === "discard";
                 const updateField = (patch: Partial<NewEventSuggestion>) =>
                   setNewEvents(newEvents.map((x, j) => j === i ? { ...x, ...patch } : x));
+                /** 保留：模拟调 POST /api/events 创建并拿到 event_id；丢弃：清掉 reservedEventId */
+                const setKeepEv = () => {
+                  const id = ne.reservedEventId || allocReservedEventId();
+                  updateField({ decision: "keep", reservedEventId: id });
+                };
+                const setDiscardEv = () => updateField({ decision: "discard", reservedEventId: undefined });
                 const removeEvent = () => setNewEvents(newEvents.filter((_, j) => j !== i));
                 return (
                   <div key={i} style={{
@@ -2330,9 +2380,9 @@ function FactEditDrawer({
                       {isDiscarded && <Tag theme="default" variant="light" size="small">已丢弃</Tag>}
                       <span style={{ flex: 1 }} />
                       {isDiscarded ? (
-                        <Button variant="text" size="small" theme="primary" onClick={() => updateField({ decision: "keep" })}>恢复</Button>
+                        <Button variant="text" size="small" theme="primary" onClick={setKeepEv}>恢复</Button>
                       ) : (
-                        <Button variant="text" size="small" theme="danger" onClick={() => updateField({ decision: "discard" })}>丢弃</Button>
+                        <Button variant="text" size="small" theme="danger" onClick={setDiscardEv}>丢弃</Button>
                       )}
                       <Button variant="text" size="small" theme="danger" icon={<CloseIcon />} onClick={removeEvent} />
                     </div>
@@ -2390,7 +2440,7 @@ function FactEditDrawer({
                 );
               })}
               <Button variant="outline" size="small" theme="warning" icon={<AddIcon />}
-                onClick={() => setNewEvents([...newEvents, { name: "", eventType: "活动", startTime: "", endTime: "", timeDesc: "", description: "", tags: [], decision: "keep", tmpId: nextTmpEvtId() }])}>
+                onClick={() => setNewEvents([...newEvents, { name: "", eventType: "活动", startTime: "", endTime: "", timeDesc: "", description: "", tags: [], decision: "keep" }])}>
                 添加新事件
               </Button>
             </FormItem>
