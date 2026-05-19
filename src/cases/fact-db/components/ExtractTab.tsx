@@ -36,7 +36,35 @@ interface ExtractedFact {
   status: "待审核" | "已审核" | "已拒绝";
   /** 操作日志：缓冲池阶段的所有动作流水（创建 / 编辑 / 通过 / 拒绝 / 撤回 等） */
   logs: BufferLog[];
+  // ⑥ 元数据（POST /api/facts 字段对齐，全部可选）
+  title?: string;                              // 事实标题
+  categoryId?: number | null;                  // 分类 ID
+  sourceType?: string;                         // 来源类型（系统字段，不可编辑，extract_text/extract_doc/extract_csv/manual...）
+  source?: string;                             // 来源（提取人/手动来源）
+  sourceUrl?: string;                          // 来源 URL
+  sourceContent?: string;                      // 来源内容（原始问答对/批次 ID）
+  contradictionReason?: string;                // 矛盾原因
+  contradictingFactIds?: string;               // 矛盾事实 ID（多个用逗号分隔）
+  duplicateFactIds?: string;                   // 语义重复事实 ID（多个用逗号分隔）
+  reviewPriority?: "low" | "medium" | "high";  // 审核优先级
+  extra?: string;                              // 扩展内容（JSON 字符串）
+  // ⑦ 多语言（仅 fact_text / time_description / title 三个字段按语言独立保存）
+  i18nContent?: Partial<Record<LangCode, string>>;
+  i18nTimeDesc?: Partial<Record<LangCode, string>>;
+  i18nTitle?: Partial<Record<LangCode, string>>;
 }
+
+/** 支持的语言代码（与后端 6 语种对齐） */
+type LangCode = "zh" | "en" | "ar" | "tr" | "ru" | "zh_hk";
+
+const LANG_OPTIONS: Array<{ code: LangCode; label: string }> = [
+  { code: "zh",    label: "中文" },
+  { code: "en",    label: "English" },
+  { code: "ar",    label: "العربية" },
+  { code: "tr",    label: "Türkçe" },
+  { code: "ru",    label: "Русский" },
+  { code: "zh_hk", label: "粵語" },
+];
 
 /** 缓冲池条目操作日志 */
 interface BufferLog {
@@ -2119,6 +2147,7 @@ function FactEditDrawer({
   onClose: () => void;
   onSave: (patch: Partial<ExtractedFact>, summary?: string) => void;
 }) {
+  // ── 左栏：事实主体 ─────────────────────────────
   const [content,     setContent]     = useState(fact.content);
   const [entities,    setEntities]    = useState<string[]>(fact.entities);
   const [newEntities, setNewEntities] = useState<NewEntitySuggestion[]>(fact.newEntities);
@@ -2127,6 +2156,24 @@ function FactEditDrawer({
   const [startTime,   setStartTime]   = useState(fact.startTime);
   const [endTime,     setEndTime]     = useState(fact.endTime);
   const [timeDesc,    setTimeDesc]    = useState(fact.timeDesc);
+
+  // ── 右栏：元数据（POST /api/facts 字段对齐）────
+  const [title,                setTitle]                = useState(fact.title || "");
+  const [categoryId,           setCategoryId]           = useState<number | null>(fact.categoryId ?? null);
+  const [source,               setSource]               = useState(fact.source || "");
+  const [sourceUrl,            setSourceUrl]            = useState(fact.sourceUrl || "");
+  const [sourceContent,        setSourceContent]        = useState(fact.sourceContent || "");
+  const [contradictionReason,  setContradictionReason]  = useState(fact.contradictionReason || "");
+  const [contradictingFactIds, setContradictingFactIds] = useState(fact.contradictingFactIds || "");
+  const [duplicateFactIds,     setDuplicateFactIds]     = useState(fact.duplicateFactIds || "");
+  const [reviewPriority,       setReviewPriority]       = useState<"low" | "medium" | "high">(fact.reviewPriority || "low");
+  const [extra,                setExtra]                = useState(fact.extra || "");
+
+  // ── 多语言切换：仅 fact_text / time_description / title 三个字段按语言独立保存 ─
+  const [lang, setLang] = useState<LangCode>("zh");
+  const [i18nContent,  setI18nContent]  = useState<Partial<Record<LangCode, string>>>(fact.i18nContent  || {});
+  const [i18nTimeDesc, setI18nTimeDesc] = useState<Partial<Record<LangCode, string>>>(fact.i18nTimeDesc || {});
+  const [i18nTitle,    setI18nTitle]    = useState<Partial<Record<LangCode, string>>>(fact.i18nTitle    || {});
 
   // 抽屉打开时（visible 从 false 变 true），把当前 fact 数据填入编辑状态
   const prevVisibleRef = React.useRef(visible);
@@ -2140,6 +2187,20 @@ function FactEditDrawer({
       setStartTime(fact.startTime);
       setEndTime(fact.endTime);
       setTimeDesc(fact.timeDesc);
+      setTitle(fact.title || "");
+      setCategoryId(fact.categoryId ?? null);
+      setSource(fact.source || "");
+      setSourceUrl(fact.sourceUrl || "");
+      setSourceContent(fact.sourceContent || "");
+      setContradictionReason(fact.contradictionReason || "");
+      setContradictingFactIds(fact.contradictingFactIds || "");
+      setDuplicateFactIds(fact.duplicateFactIds || "");
+      setReviewPriority(fact.reviewPriority || "low");
+      setExtra(fact.extra || "");
+      setLang("zh");
+      setI18nContent(fact.i18nContent  || {});
+      setI18nTimeDesc(fact.i18nTimeDesc || {});
+      setI18nTitle(fact.i18nTitle    || {});
     }
     prevVisibleRef.current = visible;
   }, [visible, fact]);
@@ -2151,8 +2212,26 @@ function FactEditDrawer({
   const liveCheck = React.useMemo(() => recheckConflict(content), [content]);
   const [compareDlg, setCompareDlg] = useState<{ mode: "conflict" | "duplicate" } | null>(null);
 
+  // ── 多语言三字段的当前显示值（lang=zh 时即主字段） ──
+  const currentContent  = lang === "zh" ? content  : (i18nContent[lang]  ?? "");
+  const currentTimeDesc = lang === "zh" ? timeDesc : (i18nTimeDesc[lang] ?? "");
+  const currentTitle    = lang === "zh" ? title    : (i18nTitle[lang]    ?? "");
+  const setCurrentContent  = (v: string) => lang === "zh" ? setContent(v)  : setI18nContent({ ...i18nContent, [lang]: v });
+  const setCurrentTimeDesc = (v: string) => lang === "zh" ? setTimeDesc(v) : setI18nTimeDesc({ ...i18nTimeDesc, [lang]: v });
+  const setCurrentTitle    = (v: string) => lang === "zh" ? setTitle(v)    : setI18nTitle({ ...i18nTitle, [lang]: v });
+
+  /** JSON 校验：扩展内容字段非空时必须是合法 JSON */
+  const extraJsonError = React.useMemo(() => {
+    if (!extra.trim()) return "";
+    try { JSON.parse(extra); return ""; } catch (e: any) { return `JSON 格式错误：${e.message || "解析失败"}`; }
+  }, [extra]);
+
   /** 保存：先做 recheck，再把最新冲突/重复结果写回；并生成编辑摘要 */
   const handleSave = () => {
+    if (extraJsonError) {
+      MessagePlugin.error(extraJsonError);
+      return;
+    }
     const recheck = recheckConflict(content);
 
     // 组装编辑摘要：列出哪些字段变了
@@ -2163,6 +2242,19 @@ function FactEditDrawer({
     if (JSON.stringify(events)      !== JSON.stringify(fact.events))      changes.push("关联事件");
     if (JSON.stringify(newEvents)   !== JSON.stringify(fact.newEvents))   changes.push("新发现事件");
     if (startTime !== fact.startTime || endTime !== fact.endTime || timeDesc !== fact.timeDesc) changes.push("有效时间");
+    if (title !== (fact.title || ""))                                             changes.push("标题");
+    if ((categoryId ?? null) !== (fact.categoryId ?? null))                       changes.push("分类");
+    if (source !== (fact.source || ""))                                           changes.push("来源");
+    if (sourceUrl !== (fact.sourceUrl || ""))                                     changes.push("来源 URL");
+    if (sourceContent !== (fact.sourceContent || ""))                             changes.push("来源内容");
+    if (contradictionReason !== (fact.contradictionReason || ""))                 changes.push("矛盾原因");
+    if (contradictingFactIds !== (fact.contradictingFactIds || ""))               changes.push("矛盾事实 ID");
+    if (duplicateFactIds !== (fact.duplicateFactIds || ""))                       changes.push("重复事实 ID");
+    if (reviewPriority !== (fact.reviewPriority || "low"))                        changes.push("审核优先级");
+    if (extra !== (fact.extra || ""))                                             changes.push("扩展内容");
+    if (JSON.stringify(i18nContent)  !== JSON.stringify(fact.i18nContent  || {})) changes.push("多语言事实内容");
+    if (JSON.stringify(i18nTimeDesc) !== JSON.stringify(fact.i18nTimeDesc || {})) changes.push("多语言时间描述");
+    if (JSON.stringify(i18nTitle)    !== JSON.stringify(fact.i18nTitle    || {})) changes.push("多语言标题");
 
     // 冲突/重复变化也写入摘要
     if (fact.conflict  && !recheck.conflict)  changes.push(`已解除与 [${fact.conflict.factId}] 的冲突`);
@@ -2174,6 +2266,10 @@ function FactEditDrawer({
 
     onSave({
       content, entities, newEntities, events, newEvents, startTime, endTime, timeDesc,
+      title, categoryId, source, sourceUrl, sourceContent,
+      contradictionReason, contradictingFactIds, duplicateFactIds,
+      reviewPriority, extra,
+      i18nContent, i18nTimeDesc, i18nTitle,
       conflict: recheck.conflict,
       duplicate: recheck.duplicate,
     }, summary);
@@ -2188,7 +2284,7 @@ function FactEditDrawer({
     <Drawer
       visible={visible}
       header="编辑事实"
-      size="60vw"
+      size="80vw"
       placement="right"
       onClose={onClose}
       footer={
@@ -2200,15 +2296,50 @@ function FactEditDrawer({
     >
       <div style={{ display: "flex", gap: 0, height: "100%", overflow: "hidden" }}>
 
-        {/* 左列：事实内容 */}
-        <div style={{ flex: "1.4", overflow: "auto", paddingRight: 20 }}>
+        {/* ═══════ 左栏：事实主体（多语言+内容+时效+关联+新建议）═══════ */}
+        <div style={{ flex: 1.2, overflow: "auto", paddingRight: 20 }}>
           <Form labelAlign="top" labelWidth={0}>
-            <FormItem label={<span style={{ fontWeight: 600 }}>事实内容 <span style={{ color: "var(--td-error-color)" }}>*</span></span>}>
-              <Textarea value={content} onChange={(v) => setContent(v)} autosize={{ minRows: 8 }} placeholder="请输入事实内容…" />
+
+            {/* 多语言切换：仅影响 fact_text / time_description / title */}
+            <FormItem label={
+              <span>
+                多语言信息
+                <span style={{ fontSize: 11, fontWeight: "normal", color: "var(--td-text-color-placeholder)", marginLeft: 8 }}>
+                  仅切换事实内容 / 时间描述 / 标题
+                </span>
+              </span>
+            }>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {LANG_OPTIONS.map((l) => {
+                  const filled = l.code === "zh"
+                    ? !!content
+                    : !!(i18nContent[l.code] || i18nTimeDesc[l.code] || i18nTitle[l.code]);
+                  return (
+                    <Button
+                      key={l.code}
+                      size="small"
+                      variant={lang === l.code ? "base" : "outline"}
+                      theme={lang === l.code ? "primary" : "default"}
+                      onClick={() => setLang(l.code)}
+                    >
+                      {l.label}{filled && lang !== l.code && <span style={{ marginLeft: 4, color: "var(--td-success-color)" }}>•</span>}
+                    </Button>
+                  );
+                })}
+              </div>
             </FormItem>
 
-            {/* 冲突 / 重复 / 已解除 提示（基于实时内容校验） */}
-            {liveCheck.conflict && (
+            <FormItem label={<span style={{ fontWeight: 600 }}>事实内容 <span style={{ color: "var(--td-error-color)" }}>*</span></span>}>
+              <Textarea
+                value={currentContent}
+                onChange={(v) => setCurrentContent(v)}
+                autosize={{ minRows: 6 }}
+                placeholder={lang === "zh" ? "请输入事实内容…" : `请输入 ${LANG_OPTIONS.find((l) => l.code === lang)?.label} 翻译…`}
+              />
+            </FormItem>
+
+            {/* 冲突 / 重复 / 已解除 提示（只在 zh 模式下展示，因为校验基于中文主字段）*/}
+            {lang === "zh" && liveCheck.conflict && (
               <div style={{ padding: "10px 12px", background: "rgba(227,77,89,0.06)", border: "1px solid rgba(227,77,89,0.2)", borderRadius: 6, marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: "#e34d59" }}>⚠ 冲突事实</span>
@@ -2222,7 +2353,7 @@ function FactEditDrawer({
                 </div>
               </div>
             )}
-            {liveCheck.duplicate && (
+            {lang === "zh" && liveCheck.duplicate && (
               <div style={{ padding: "10px 12px", background: "rgba(255,184,0,0.06)", border: "1px solid rgba(255,184,0,0.35)", borderRadius: 6, marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: "var(--td-warning-color)" }}>≈ 重复事实</span>
@@ -2236,26 +2367,33 @@ function FactEditDrawer({
                 </div>
               </div>
             )}
-            {/* 已解除提示：原本有冲突/重复，编辑后已不再命中 */}
-            {fact.conflict && !liveCheck.conflict && (
+            {lang === "zh" && fact.conflict && !liveCheck.conflict && (
               <div style={{ padding: "8px 12px", background: "rgba(0,168,112,0.06)", border: "1px solid rgba(0,168,112,0.3)", borderRadius: 6, marginBottom: 10, fontSize: 12, color: "var(--td-success-color)" }}>
                 ✓ 编辑后已不再与 [{fact.conflict.factId}] 冲突，保存即生效
               </div>
             )}
-            {fact.duplicate && !liveCheck.duplicate && (
+            {lang === "zh" && fact.duplicate && !liveCheck.duplicate && (
               <div style={{ padding: "8px 12px", background: "rgba(0,168,112,0.06)", border: "1px solid rgba(0,168,112,0.3)", borderRadius: 6, marginBottom: 10, fontSize: 12, color: "var(--td-success-color)" }}>
                 ✓ 编辑后已不再与 [{fact.duplicate.factId}] 重复，保存即生效
               </div>
             )}
-          </Form>
-        </div>
 
-        {/* 分割线 */}
-        <div style={{ width: 1, background: "var(--td-component-stroke)", margin: "0 4px", flexShrink: 0 }} />
-
-        {/* 右列：关联信息 */}
-        <div style={{ flex: 1, overflow: "auto", paddingLeft: 20 }}>
-          <Form labelAlign="top" labelWidth={0}>
+            {/* 时效（开始/结束/时间描述）*/}
+            <div style={{ display: "flex", gap: 8 }}>
+              <FormItem label="开始时间" style={{ flex: 1 }}>
+                <DatePicker value={startTime} onChange={(v) => setStartTime(v as string)} enableTimePicker clearable placeholder="选择开始时间" style={{ width: "100%" }} />
+              </FormItem>
+              <FormItem label="结束时间" style={{ flex: 1 }}>
+                <DatePicker value={endTime} onChange={(v) => setEndTime(v as string)} enableTimePicker clearable placeholder="选择结束时间" style={{ width: "100%" }} />
+              </FormItem>
+            </div>
+            <FormItem label="时间描述">
+              <Input
+                value={currentTimeDesc}
+                onChange={(v) => setCurrentTimeDesc(v)}
+                placeholder={lang === "zh" ? "如：每周五至每周日、每月1号等" : `${LANG_OPTIONS.find((l) => l.code === lang)?.label} 翻译…`}
+              />
+            </FormItem>
 
             {/* 关联实体（已存在）*/}
             <FormItem label="关联实体（已存在）">
@@ -2272,7 +2410,7 @@ function FactEditDrawer({
               />
             </FormItem>
 
-            {/* 新发现实体（待入库）—— 卡片表单：名称 / 描述 / 标签 + 丢弃 / 恢复 / 添加 */}
+            {/* 新发现实体（待入库）*/}
             <FormItem label="新发现实体（待入库）">
               {newEntities.length === 0 && (
                 <div style={{ fontSize: 12, color: "var(--td-text-color-placeholder)", marginBottom: 8 }}>
@@ -2302,6 +2440,9 @@ function FactEditDrawer({
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                       <Tag theme="warning" variant="light" size="small">建议新增</Tag>
                       {isDiscarded && <Tag theme="default" variant="light" size="small">已丢弃</Tag>}
+                      {entity.reservedEntityId && !isDiscarded && (
+                        <Tag theme="success" variant="light" size="small">ID:{entity.reservedEntityId}</Tag>
+                      )}
                       <span style={{ flex: 1 }} />
                       {isDiscarded ? (
                         <Button variant="text" size="small" theme="primary" onClick={setKeep}>恢复</Button>
@@ -2349,7 +2490,7 @@ function FactEditDrawer({
               />
             </FormItem>
 
-            {/* 建议新增事件：可编辑字段，可丢弃/恢复/删除/手动添加 */}
+            {/* 建议新增事件 */}
             <FormItem label="新发现事件（待入库）">
               {newEvents.length === 0 && (
                 <div style={{ fontSize: 12, color: "var(--td-text-color-placeholder)", marginBottom: 8 }}>
@@ -2378,6 +2519,9 @@ function FactEditDrawer({
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                       <Tag theme="warning" variant="light" size="small">建议新增</Tag>
                       {isDiscarded && <Tag theme="default" variant="light" size="small">已丢弃</Tag>}
+                      {ne.reservedEventId && !isDiscarded && (
+                        <Tag theme="success" variant="light" size="small">ID:{ne.reservedEventId}</Tag>
+                      )}
                       <span style={{ flex: 1 }} />
                       {isDiscarded ? (
                         <Button variant="text" size="small" theme="primary" onClick={setKeepEv}>恢复</Button>
@@ -2445,15 +2589,117 @@ function FactEditDrawer({
               </Button>
             </FormItem>
 
-            {/* 事实时间 */}
-            <FormItem label="开始时间">
-              <DatePicker value={startTime} onChange={(v) => setStartTime(v as string)} enableTimePicker clearable placeholder="选择开始时间" style={{ width: "100%" }} />
+          </Form>
+        </div>
+
+        {/* 分割线 */}
+        <div style={{ width: 1, background: "var(--td-component-stroke)", margin: "0 4px", flexShrink: 0 }} />
+
+        {/* ═══════ 右栏：元数据（标题/分类/来源/矛盾/扩展/优先级）═══════ */}
+        <div style={{ flex: 1, overflow: "auto", paddingLeft: 20 }}>
+          <Form labelAlign="top" labelWidth={0}>
+
+            {/* 分组 1：基础信息 */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--td-text-color-secondary)", margin: "0 0 8px", paddingBottom: 6, borderBottom: "1px solid var(--td-component-stroke)" }}>
+              基础信息
+            </div>
+            <FormItem label="标题">
+              <Input
+                value={currentTitle}
+                onChange={(v) => setCurrentTitle(v)}
+                placeholder={lang === "zh" ? "事实标题（可选）" : `${LANG_OPTIONS.find((l) => l.code === lang)?.label} 翻译…`}
+              />
             </FormItem>
-            <FormItem label="结束时间">
-              <DatePicker value={endTime} onChange={(v) => setEndTime(v as string)} enableTimePicker clearable placeholder="选择结束时间" style={{ width: "100%" }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <FormItem label="分类" style={{ flex: 1 }}>
+                <Select
+                  value={categoryId ?? undefined}
+                  onChange={(v) => setCategoryId((v as number) ?? null)}
+                  options={[
+                    { label: "无分类", value: 0 },
+                    { label: "活动", value: 1 },
+                    { label: "技能", value: 2 },
+                    { label: "皮肤", value: 3 },
+                    { label: "玩法", value: 4 },
+                    { label: "其他", value: 99 },
+                  ]}
+                  clearable
+                  placeholder="选择分类"
+                  style={{ width: "100%" }}
+                />
+              </FormItem>
+              <FormItem label="审核优先级" style={{ flex: 1 }}>
+                <Select
+                  value={reviewPriority}
+                  onChange={(v) => setReviewPriority(v as "low" | "medium" | "high")}
+                  options={[
+                    { label: "低", value: "low" },
+                    { label: "中", value: "medium" },
+                    { label: "高", value: "high" },
+                  ]}
+                  style={{ width: "100%" }}
+                />
+              </FormItem>
+            </div>
+
+            {/* 分组 2：来源溯源 */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--td-text-color-secondary)", margin: "16px 0 8px", paddingBottom: 6, borderBottom: "1px solid var(--td-component-stroke)" }}>
+              来源溯源
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <FormItem label="来源类型" style={{ flex: 1 }}>
+                <Input value={fact.sourceType || "extract_text"} disabled placeholder="系统字段，不可编辑" />
+              </FormItem>
+              <FormItem label="来源" style={{ flex: 1 }}>
+                <Input value={source} onChange={(v) => setSource(v)} placeholder="提取人 / 手动来源" />
+              </FormItem>
+            </div>
+            <FormItem label="来源 URL">
+              <Input value={sourceUrl} onChange={(v) => setSourceUrl(v)} placeholder="https://..." />
             </FormItem>
-            <FormItem label="时间描述">
-              <Input value={timeDesc} onChange={(v) => setTimeDesc(v)} placeholder="如：每周五至每周日、每月1号等" />
+            <FormItem label="来源内容（原始问答对等）">
+              <Textarea
+                value={sourceContent}
+                onChange={(v) => setSourceContent(v)}
+                autosize={{ minRows: 2, maxRows: 4 }}
+                placeholder="可填写原始问题/答案/批次 ID，用于追溯来源"
+              />
+            </FormItem>
+
+            {/* 分组 3：矛盾与重复 */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--td-text-color-secondary)", margin: "16px 0 8px", paddingBottom: 6, borderBottom: "1px solid var(--td-component-stroke)" }}>
+              矛盾与重复
+            </div>
+            <FormItem label="矛盾原因">
+              <Textarea
+                value={contradictionReason}
+                onChange={(v) => setContradictionReason(v)}
+                autosize={{ minRows: 2, maxRows: 3 }}
+                placeholder="如该事实与其他事实存在矛盾，请填写矛盾原因（留空表示无矛盾）"
+              />
+            </FormItem>
+            <FormItem label="矛盾事实 ID（多个用逗号分隔）">
+              <Input value={contradictingFactIds} onChange={(v) => setContradictingFactIds(v)} placeholder="如：1,2,3" />
+            </FormItem>
+            <FormItem label="语义重复事实 ID（多个用逗号分隔）">
+              <Input value={duplicateFactIds} onChange={(v) => setDuplicateFactIds(v)} placeholder="如：1,2,3" />
+            </FormItem>
+
+            {/* 分组 4：扩展 */}
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--td-text-color-secondary)", margin: "16px 0 8px", paddingBottom: 6, borderBottom: "1px solid var(--td-component-stroke)" }}>
+              扩展
+            </div>
+            <FormItem
+              label="扩展内容（JSON，可选）"
+              status={extraJsonError ? "error" : undefined}
+              tips={extraJsonError || undefined}
+            >
+              <Textarea
+                value={extra}
+                onChange={(v) => setExtra(v)}
+                autosize={{ minRows: 3, maxRows: 6 }}
+                placeholder='例如：{"ticket_id":"12345"}'
+              />
             </FormItem>
 
           </Form>
