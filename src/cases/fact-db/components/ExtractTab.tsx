@@ -134,13 +134,13 @@ interface ExtractBatch {
   expanded: boolean;
   /** 是否已归档：true=已归档区，false=待处理区 */
   archived: boolean;
-  /** 归档原因：exported（已导出为 Excel）/ committed（已批量入库）/ manual（手动归档） */
+  /** 归档原因：exported（已导出 CSV）/ committed（已批量入库）/ manual（手动归档） */
   archiveReason?: "exported" | "committed" | "manual";
   /** 归档时间 */
   archivedAt?: string;
   /** 归档操作人 */
   archivedBy?: string;
-  /** 导出时间（如导出过 Excel） */
+  /** 导出时间（如导出过 CSV） */
   exportedAt?: string;
 }
 
@@ -188,13 +188,11 @@ const initLogs = (operator: string, time: string): BufferLog[] => [
 ];
 
 // 通用导出工具：把若干 (batch, fact) 对生成 CSV 并触发下载，返回下载文件名
-// v2.3 起：列名为中文（与子2 §2.2.4 事实导入模板一致）+ 附加 4 列已标注信息（审核状态/审核人/审核时间/审核备注）
-// 让外团完整看到流程；导入回事实管理时由导入端只取「审核状态=已审核」的行入库
+// v2.4：列名对齐「事实导入模板」中文表头；导出三态全部条目，但不附带审核人/审核时间/审核备注
 const exportFactsToCSV = (
   rows: Array<{ batch: ExtractBatch; fact: ExtractedFact }>,
   fileSuffix = ""
 ): string => {
-  // 中文 status 直接作为导出列值（与「事实导入模板」对齐：待审核 / 已审核 / 已拒绝）
   // 名称 → 正式 ID 字典（mock 演示），真实环境应来自 entities/recall 与新建实体响应
   const entityNameToId = new Map<string, number>(mockEntities.map((e) => [e.title, e.id]));
   const eventNameToId  = new Map<string, number>(mockEvents.map((e)  => [e.name, e.id]));
@@ -221,15 +219,8 @@ const exportFactsToCSV = (
     });
     return Array.from(new Set(ids));
   };
-  /** 从 logs 推断审核动作的人/时间/备注（取最近一条 通过/拒绝/撤回 类日志） */
-  const pickReviewMeta = (f: ExtractedFact): { reviewer: string; reviewedAt: string; remark: string } => {
-    const reviewActions: BufferLog["action"][] = ["通过", "拒绝"];
-    const last = [...f.logs].reverse().find((l) => reviewActions.includes(l.action));
-    if (!last) return { reviewer: "", reviewedAt: "", remark: "" };
-    return { reviewer: last.operator, reviewedAt: last.time, remark: last.detail || "" };
-  };
 
-  // 列名与「事实导入模板」（子2 §2.2.4）对齐，并扩展 3 列已标注信息
+  // 与 5/22「事实库导入模板-事实.csv」保持一致的中文表头
   const headers = [
     "事实ID", "标题", "事实内容", "分类ID",
     "来源类型", "来源", "来源URL", "来源内容",
@@ -238,13 +229,11 @@ const exportFactsToCSV = (
     "关联事件ID（多个用英文逗号分隔）",
     "矛盾事实ID（多个用英文逗号分隔）",
     "审核状态（待审核/已审核/已拒绝）",
-    "审核人", "审核时间", "审核备注",
   ];
 
   const escape = (s: string) => s.replace(/\r?\n/g, " ").replace(/"/g, "\"\"");
   const data: string[][] = [headers];
   rows.forEach(({ batch: b, fact: f }) => {
-    const meta = pickReviewMeta(f);
     const row: string[] = [
       "",                                      // 事实ID（入库时分配）
       "",                                      // 标题
@@ -260,10 +249,7 @@ const exportFactsToCSV = (
       collectEntityIds(f).join(","),           // 关联实体ID
       collectEventIds(f).join(","),            // 关联事件ID
       f.conflict ? f.conflict.factId : "",     // 矛盾事实ID
-      f.status,                                // 审核状态（中文：待审核/已审核/已拒绝）
-      meta.reviewer,                           // 审核人
-      meta.reviewedAt,                         // 审核时间
-      escape(meta.remark),                     // 审核备注
+      f.status,                                // 审核状态（中文三态）
     ];
     data.push(row);
   });
@@ -496,7 +482,7 @@ const mockBatches: ExtractBatch[] = [
       },
     ],
   },
-  // 已归档批次（演示用：已导出为 Excel）
+  // 已归档批次（演示用：已导出 CSV）
   {
     batchId: "BATCH-20260505-0003",
     extractedAt: "2026-05-05 16:08:22",
@@ -524,7 +510,7 @@ const mockBatches: ExtractBatch[] = [
         status: "待审核",
         logs: [
           { id: 1, time: "2026-05-05 16:08:22", operator: CURRENT_USER, action: "创建", detail: "AI 提取入审核区" },
-          { id: 2, time: "2026-05-05 17:30:11", operator: CURRENT_USER, action: "编辑", detail: "导出为 Excel（fact-export-20260505.xlsx）" },
+          { id: 2, time: "2026-05-05 17:30:11", operator: CURRENT_USER, action: "编辑", detail: "导出 CSV（fact-export-20260505.csv）" },
         ],
       },
       {
@@ -539,7 +525,7 @@ const mockBatches: ExtractBatch[] = [
         status: "待审核",
         logs: [
           { id: 1, time: "2026-05-05 16:08:22", operator: CURRENT_USER, action: "创建", detail: "AI 提取入审核区" },
-          { id: 2, time: "2026-05-05 17:30:11", operator: CURRENT_USER, action: "编辑", detail: "导出为 Excel（fact-export-20260505.xlsx）" },
+          { id: 2, time: "2026-05-05 17:30:11", operator: CURRENT_USER, action: "编辑", detail: "导出 CSV（fact-export-20260505.csv）" },
         ],
       },
     ],
@@ -604,12 +590,8 @@ export default function ExtractTab() {
   const [segments, setSegments] = useState<FileSegment[]>([]);
   /** 视图分区：pending=待处理，archived=已归档 */
   const [view, setView] = useState<"pending" | "archived">("pending");
-  /** 多选的事实 ID 集合（跨批次累加，用于批量审核模式）*/
+  /** 多选的事实 ID 集合（跨批次累加） */
   const [selectedFactIds, setSelectedFactIds] = useState<Set<string>>(new Set());
-  /** 选中的批次 ID 集合（用于导出 CSV 模式）*/
-  const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
-  /** 批量操作模式：none=默认浏览态 / review=批量审核 / export=导出 CSV */
-  const [actionMode, setActionMode] = useState<"none" | "review" | "export">("none");
 
   // 1. 按提取人筛选
   const scopedBatches = scope === "mine"
@@ -640,14 +622,7 @@ export default function ExtractTab() {
 
   // 5. 多选相关
   const selectedCount = selectedFactIds.size;
-  const selectedBatchCount = selectedBatchIds.size;
-  const clearSelection = () => { setSelectedFactIds(new Set()); setSelectedBatchIds(new Set()); };
-  /** 进入指定模式（互斥，进入前清空所选）*/
-  const enterMode = (m: "review" | "export") => { clearSelection(); setActionMode(m); };
-  /** 退出当前模式 */
-  const exitMode = () => { setActionMode("none"); clearSelection(); };
-  /** 切批次/视图/筛选时自动退出（避免认知错位）*/
-  React.useEffect(() => { if (actionMode !== "none") exitMode(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [view]);
+  const clearSelection = () => setSelectedFactIds(new Set());
   const toggleSelectFact = (factId: string) => {
     setSelectedFactIds((prev) => {
       const next = new Set(prev);
@@ -655,7 +630,7 @@ export default function ExtractTab() {
       return next;
     });
   };
-  /** 整批切换选中（批量审核模式：批次级 ⇄ 子项级自动联动）*/
+  /** 整批切换选中：若批次内所有条目全已选中则全取消，否则全选中 */
   const toggleSelectBatch = (batch: ExtractBatch) => {
     const batchFactIds = batch.facts.map((f) => f.factId);
     const allSelected = batchFactIds.every((id) => selectedFactIds.has(id));
@@ -669,13 +644,16 @@ export default function ExtractTab() {
       return next;
     });
   };
-  /** 导出 CSV 模式：勾选/取消整批次（颗粒度 = 整批次） */
-  const toggleSelectBatchForExport = (batchId: string) => {
-    setSelectedBatchIds((prev) => {
-      const next = new Set(prev);
-      next.has(batchId) ? next.delete(batchId) : next.add(batchId);
-      return next;
-    });
+  /** 全选/取消全选当前视图所有 facts */
+  const allVisibleFactIds = visibleBatches.flatMap((b) => b.facts.map((f) => f.factId));
+  const allVisibleSelected = allVisibleFactIds.length > 0 && allVisibleFactIds.every((id) => selectedFactIds.has(id));
+  const someVisibleSelected = allVisibleFactIds.some((id) => selectedFactIds.has(id));
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      clearSelection();
+    } else {
+      setSelectedFactIds(new Set(allVisibleFactIds));
+    }
   };
   // 视图切换时清空选择
   React.useEffect(() => { clearSelection(); }, [view, scope]);
@@ -928,22 +906,47 @@ export default function ExtractTab() {
     }, 0);
   };
 
-  /** 导出 CSV：v2.3 起改为「整批次全量导出（不论审核状态）+ 附带审核人/审核时间/审核备注」，让外团完整看到流程
-   *  导入回事实管理时由导入端只取「审核状态=已审核」的行入库
-   */
-  const handleExport = () => {
-    if (selectedBatchCount === 0) { MessagePlugin.warning("请先勾选要导出的批次"); return; }
-
-    // 收集所选批次内的全部事实（整批次全量，不再按 selectedFactIds 挑子项）
-    const involvedBatchIds = selectedBatchIds;
-    const selectedRows: Array<{ batch: ExtractBatch; fact: ExtractedFact }> = [];
-    batches.forEach((b) => {
-      if (!involvedBatchIds.has(b.batchId)) return;
-      b.facts.forEach((f) => selectedRows.push({ batch: b, fact: f }));
+  /** 批量删除（多选）：从缓冲池彻底移除选中条目，需二次确认 */
+  const handleBatchDelete = () => {
+    if (selectedCount === 0) { MessagePlugin.warning("请先勾选事实条目"); return; }
+    const ids = selectedFactIds;
+    const dlg = DialogPlugin.confirm({
+      header: "批量删除",
+      body: `确认从缓冲池删除选中的 ${selectedCount} 条事实？删除后不可恢复，建议优先使用「批量拒绝」留存记录。`,
+      theme: "danger",
+      confirmBtn: { content: `删除 ${selectedCount} 条`, theme: "danger" },
+      onConfirm: () => {
+        setBatches((prev) =>
+          prev.map((b) => ({ ...b, facts: b.facts.filter((f) => !ids.has(f.factId)) }))
+              .filter((b) => b.facts.length > 0)
+        );
+        MessagePlugin.success(`已删除 ${selectedCount} 条`);
+        clearSelection();
+        dlg.destroy();
+      },
+      onCancel: () => dlg.destroy(),
     });
-    if (selectedRows.length === 0) return;
+  };
 
-    // 校验：所有"保留"的新建议实体/事件必须已通过 POST /api/entities|events 拿到正式 ID
+  /** 导出 CSV：必须完整勾选批次；导出完整批次内全部三态事实，不附带审核人/时间字段 */
+  const handleExport = () => {
+    if (selectedCount === 0) { MessagePlugin.warning("请先勾选事实条目"); return; }
+
+    const involvedBatches = batches.filter((b) => b.facts.some((f) => selectedFactIds.has(f.factId)));
+    if (involvedBatches.length === 0) return;
+
+    // 校验：每个涉及批次必须完整选中，不允许导出批次的一部分
+    const hasPartialBatch = involvedBatches.some((b) => !b.facts.every((f) => selectedFactIds.has(f.factId)));
+    if (hasPartialBatch) {
+      MessagePlugin.warning("只允许导出整个批次的数据");
+      return;
+    }
+
+    // 收集完整批次内全部事实
+    const selectedRows: Array<{ batch: ExtractBatch; fact: ExtractedFact }> = [];
+    involvedBatches.forEach((b) => b.facts.forEach((f) => selectedRows.push({ batch: b, fact: f })));
+
+    // 校验：所有"保留"的新建议实体/事件必须已拿到正式 ID
     const unconfirmed = selectedRows.filter(({ fact }) =>
       fact.newEntities.some((e) => e.decision === "keep" && !e.reservedEntityId) ||
       fact.newEvents.some((e) => e.decision === "keep" && !e.reservedEventId)
@@ -960,21 +963,22 @@ export default function ExtractTab() {
     const cntByStatus = selectedRows.reduce<Record<string, number>>((a, { fact }) => {
       a[fact.status] = (a[fact.status] || 0) + 1; return a;
     }, {});
+    const involvedBatchIds = new Set(involvedBatches.map((b) => b.batchId));
 
     const dlg = DialogPlugin.confirm({
       header: "导出 CSV",
       body: (
         <div style={{ fontSize: 13, lineHeight: 1.8 }}>
-          <div>将导出 <strong>{involvedBatchIds.size}</strong> 个批次共 <strong>{selectedRows.length}</strong> 条事实：</div>
+          <div>将导出 <strong>{involvedBatches.length}</strong> 个完整批次共 <strong>{selectedRows.length}</strong> 条事实：</div>
           <div style={{ margin: "6px 0 10px", paddingLeft: 8 }}>
             {cntByStatus["已审核"] > 0 && <div>✅ 已通过（approved）<strong style={{ color: "var(--td-success-color)" }}>{cntByStatus["已审核"]}</strong> 条</div>}
             {cntByStatus["待审核"] > 0 && <div>⏳ 待审核（pending）<strong style={{ color: "var(--td-warning-color)" }}>{cntByStatus["待审核"]}</strong> 条</div>}
             {cntByStatus["已拒绝"] > 0 && <div>✗ 已拒绝（deleted）<strong style={{ color: "var(--td-text-color-placeholder)" }}>{cntByStatus["已拒绝"]}</strong> 条</div>}
           </div>
           <div style={{ color: "var(--td-text-color-secondary)", fontSize: 12 }}>
-            完整含审核状态/审核人/审核时间一并导出，让外团了解平台审核进度。<br />
-            导出后这些批次将<strong>自动全部归档</strong>，归档区可重新导出。<br />
-            导入回事实管理时由导入端只取"已审核"行入库。
+            导出完整批次内全部事实（含待审核/已审核/已拒绝三态）。<br />
+            多个完整批次会合并为一份 CSV，不额外增加 batch_id。<br />
+            导出后这些批次将自动归档。
           </div>
         </div>
       ) as any,
@@ -983,15 +987,9 @@ export default function ExtractTab() {
       cancelBtn: { content: "取消", variant: "outline" },
       onConfirm: () => {
         const filename = exportFactsToCSV(selectedRows);
-
-        // 整批次全部归档（不再因有待审核条目而保留在待处理区）
         const now = nowStr();
         setBatches((prev) => prev.map((b) => {
           if (!involvedBatchIds.has(b.batchId)) return b;
-          const updatedFacts = b.facts.map((f) => ({
-            ...f,
-            logs: [...f.logs, mkLog("编辑", `导出 CSV（${filename}）`)],
-          }));
           return {
             ...b,
             archived: true,
@@ -999,11 +997,11 @@ export default function ExtractTab() {
             archivedAt: now,
             archivedBy: CURRENT_USER,
             exportedAt: now,
-            facts: updatedFacts,
+            facts: b.facts.map((f) => ({ ...f, logs: [...f.logs, mkLog("编辑", `导出 CSV（${filename}）`)] })),
           };
         }));
         MessagePlugin.success(`已导出 ${selectedRows.length} 条事实，${involvedBatchIds.size} 个批次已归档`);
-        exitMode();
+        clearSelection();
         dlg.destroy();
       },
       onCancel: () => dlg.destroy(),
@@ -1111,7 +1109,7 @@ export default function ExtractTab() {
             <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
               <div>
                 <div style={{ fontSize: 12, color: "var(--td-text-color-secondary)", marginBottom: 5 }}>提取模式</div>
-                <Radio.Group value={mode} onChange={(v) => setActionMode(v as string)}>
+                <Radio.Group value={mode} onChange={(v) => setMode(v as string)}>
                   <Radio value="single">
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                       单段提取
@@ -1227,7 +1225,7 @@ export default function ExtractTab() {
                 <div style={{ fontSize: 12, lineHeight: 1.6 }}>
                   <div style={{ fontWeight: 600, marginBottom: 4 }}>使用说明</div>
                   <div style={{ marginBottom: 6, opacity: 0.85 }}>
-                    AI 提取的事实先进入「待处理」区暂存，审核完毕后批量入库或导出 Excel。所有人共享可见。
+                    AI 提取的事实先进入「待处理」区暂存，审核完毕后批量入库或导出 CSV。所有人共享可见。
                   </div>
                   <div style={{ fontWeight: 500, marginTop: 6 }}>使用步骤：</div>
                   <ol style={{ margin: "4px 0 0 18px", padding: 0 }}>
@@ -1296,125 +1294,53 @@ export default function ExtractTab() {
           )}
         </div>
 
-        {/* 顶部工具栏（v2.3 双模式）：
-            默认 - 两个入口按钮 [批量审核] [导出 CSV]
-            review 模式 - 紫色模式条 + 退出
-            export 模式 - 绿色模式条 + 退出
-        */}
-        {view === "pending" && visibleBatches.length > 0 && actionMode === "none" && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "7px 12px",
-            background: "var(--td-bg-color-secondarycontainer)",
-            border: "1px solid var(--td-component-stroke)",
-            borderRadius: 6,
-            marginBottom: 10,
-            flexShrink: 0,
-          }}>
-            <span style={{ fontSize: 12, color: "var(--td-text-color-placeholder)" }}>
-              对单条事实可逐条点「通过/拒绝/撤回」；要批量处理或导出请先选择模式：
-            </span>
-            <span style={{ flex: 1 }} />
-            <Button size="small" variant="outline" theme="primary" icon={<CheckIcon />} onClick={() => enterMode("review")}>批量审核</Button>
-            <Button size="small" variant="outline" theme="success" icon={<AttachIcon />} onClick={() => enterMode("export")}>导出 CSV</Button>
-          </div>
-        )}
-
-        {view === "pending" && visibleBatches.length > 0 && actionMode === "review" && (
+        {/* 操作栏：未多选时显示全选入口 + 说明；多选时变为批量操作条 */}
+        {view === "pending" && visibleBatches.length > 0 && (
           <div style={{
             display: "flex", alignItems: "center", gap: 10,
-            padding: "8px 12px",
-            background: "rgba(0,82,217,0.08)",
-            border: "1px solid rgba(0,82,217,0.3)",
+            padding: "7px 12px",
+            background: selectedCount > 0 ? "rgba(0,82,217,0.06)" : "var(--td-bg-color-secondarycontainer)",
+            border: `1px solid ${selectedCount > 0 ? "rgba(0,82,217,0.2)" : "var(--td-component-stroke)"}`,
             borderRadius: 6,
             marginBottom: 10,
             flexShrink: 0,
+            flexWrap: "wrap",
+            transition: "background .15s, border-color .15s",
           }}>
-            <span style={{ fontSize: 13, color: "var(--td-brand-color)", fontWeight: 600 }}>⊕ 批量审核模式</span>
-            <span style={{ fontSize: 12, color: "var(--td-text-color-secondary)" }}>
-              · 选择需要批量处理的批次或事实条目
-            </span>
+            {/* 全选 Checkbox */}
+            <Checkbox
+              checked={allVisibleSelected}
+              indeterminate={someVisibleSelected && !allVisibleSelected}
+              onChange={toggleSelectAll}
+            />
+            {selectedCount === 0 ? (
+              // 未多选：提示说明
+              <span style={{ fontSize: 12, color: "var(--td-text-color-placeholder)" }}>
+                勾选多个条目或批次头进行批量操作
+              </span>
+            ) : (
+              // 多选中：显示数量 + 操作按钮
+              <>
+                <span style={{ fontSize: 13, color: "var(--td-text-color-primary)" }}>
+                  已选 <strong style={{ color: "var(--td-brand-color)" }}>{selectedCount}</strong> 条
+                </span>
+                <span style={{ width: 1, height: 14, background: "var(--td-component-stroke)" }} />
+                <Button size="small" theme="success" variant="outline" icon={<CheckIcon />} onClick={handleBatchApprove}>批量通过</Button>
+                <Button size="small" theme="danger"  variant="outline" icon={<CloseIcon />} onClick={handleBatchReject}>批量拒绝</Button>
+                <Button size="small" theme="primary" variant="outline" icon={<AttachIcon />} onClick={handleExport}>导出 CSV</Button>
+                <span style={{ width: 1, height: 14, background: "var(--td-component-stroke)" }} />
+                <Button size="small" variant="outline" theme="danger" onClick={handleBatchDelete}>批量删除</Button>
+              </>
+            )}
             <span style={{ flex: 1 }} />
             {selectedCount > 0 && (
-              <span style={{ fontSize: 13 }}>已选 <strong style={{ color: "var(--td-brand-color)" }}>{selectedCount}</strong> 条</span>
+              <Button size="small" variant="text" onClick={clearSelection}>清空选择</Button>
             )}
-            <Button size="small" variant="text" onClick={exitMode}>退出</Button>
           </div>
         )}
 
-        {view === "pending" && visibleBatches.length > 0 && actionMode === "export" && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "8px 12px",
-            background: "rgba(0,168,112,0.08)",
-            border: "1px solid rgba(0,168,112,0.3)",
-            borderRadius: 6,
-            marginBottom: 10,
-            flexShrink: 0,
-          }}>
-            <span style={{ fontSize: 13, color: "var(--td-success-color)", fontWeight: 600 }}>📥 导出 CSV 模式</span>
-            <span style={{ fontSize: 12, color: "var(--td-text-color-secondary)" }}>
-              · 选择要导出的整批次（不能挑子项），导出后批次自动归档
-            </span>
-            <span style={{ flex: 1 }} />
-            {selectedBatchCount > 0 && (
-              <span style={{ fontSize: 13 }}>已选 <strong style={{ color: "var(--td-success-color)" }}>{selectedBatchCount}</strong> 个批次</span>
-            )}
-            <Button size="small" variant="text" onClick={exitMode}>退出</Button>
-          </div>
-        )}
-
-        {/* 批量审核模式底部浮起栏（有选中时） */}
-        {view === "pending" && actionMode === "review" && selectedCount > 0 && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "7px 12px",
-            background: "var(--td-bg-color-container)",
-            border: "1px solid rgba(0,82,217,0.25)",
-            borderRadius: 6,
-            marginBottom: 10,
-            flexShrink: 0,
-            boxShadow: "0 2px 6px rgba(0,82,217,0.08)",
-          }}>
-            <span style={{ fontSize: 13, color: "var(--td-text-color-primary)" }}>
-              已选 <strong style={{ color: "var(--td-brand-color)" }}>{selectedCount}</strong> 条事实
-            </span>
-            <span style={{ width: 1, height: 14, background: "var(--td-component-stroke)" }} />
-            <Button size="small" theme="success" variant="outline" icon={<CheckIcon />} onClick={handleBatchApprove}>批量通过</Button>
-            <Button size="small" theme="danger"  variant="outline" icon={<CloseIcon />} onClick={handleBatchReject}>批量拒绝</Button>
-            <span style={{ flex: 1 }} />
-            <Button size="small" variant="text" onClick={() => setSelectedFactIds(new Set())}>清空</Button>
-          </div>
-        )}
-
-        {/* 导出 CSV 模式底部浮起栏（有选中批次时） */}
-        {view === "pending" && actionMode === "export" && selectedBatchCount > 0 && (() => {
-          const factCountInSelectedBatches = batches
-            .filter((b) => selectedBatchIds.has(b.batchId))
-            .reduce((sum, b) => sum + b.facts.length, 0);
-          return (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "7px 12px",
-              background: "var(--td-bg-color-container)",
-              border: "1px solid rgba(0,168,112,0.25)",
-              borderRadius: 6,
-              marginBottom: 10,
-              flexShrink: 0,
-              boxShadow: "0 2px 6px rgba(0,168,112,0.08)",
-            }}>
-              <span style={{ fontSize: 13, color: "var(--td-text-color-primary)" }}>
-                已选 <strong style={{ color: "var(--td-success-color)" }}>{selectedBatchCount}</strong> 个批次（共含 {factCountInSelectedBatches} 条事实）
-              </span>
-              <span style={{ flex: 1 }} />
-              <Button size="small" theme="success" variant="base" icon={<AttachIcon />} onClick={handleExport}>导出 CSV</Button>
-              <Button size="small" variant="text" onClick={() => setSelectedBatchIds(new Set())}>清空</Button>
-            </div>
-          );
-        })()}
-
-        {/* 顶部右侧固定操作（默认浏览态显示，进入模式后隐藏避免视觉干扰） */}
-        {view === "pending" && commitableCount > 0 && actionMode === "none" && (
+        {/* 顶部右侧固定操作（在操作栏之外仍可见） */}
+        {view === "pending" && commitableCount > 0 && selectedCount === 0 && (
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10, flexShrink: 0 }}>
             <Tooltip content={`当前有已完全审核的批次可入库（共 ${commitableCount} 条已审核事实）`}>
               <Button theme="primary" size="small" onClick={handleCommitAll}>
@@ -1440,12 +1366,10 @@ export default function ExtractTab() {
                 key={batch.batchId}
                 batch={batch}
                 setBatches={setBatches}
-                mode={actionMode}
                 selectedFactIds={selectedFactIds}
-                selectedBatchIds={selectedBatchIds}
+                hasAnySelection={selectedCount > 0}
                 onToggleSelect={toggleSelectFact}
                 onToggleBatch={toggleSelectBatch}
-                onToggleBatchForExport={toggleSelectBatchForExport}
                 onUnarchive={handleUnarchive}
               />
             ))
@@ -1460,23 +1384,19 @@ export default function ExtractTab() {
 function BatchCard({
   batch,
   setBatches,
-  mode,
   selectedFactIds,
-  selectedBatchIds,
+  hasAnySelection,
   onToggleSelect,
   onToggleBatch,
-  onToggleBatchForExport,
   onUnarchive,
 }: {
   batch: ExtractBatch;
   setBatches: React.Dispatch<React.SetStateAction<ExtractBatch[]>>;
-  /** 当前操作模式：none=默认 / review=批量审核 / export=导出 CSV */
-  mode: "none" | "review" | "export";
   selectedFactIds: Set<string>;
-  selectedBatchIds: Set<string>;
+  /** 全局是否有任何条目被选中（控制所有批次的批量操作按钮显隐） */
+  hasAnySelection: boolean;
   onToggleSelect: (factId: string) => void;
   onToggleBatch: (batch: ExtractBatch) => void;
-  onToggleBatchForExport: (batchId: string) => void;
   onUnarchive: (batchId: string) => void;
 }) {
   const [sourceVisible, setSourceVisible] = useState(false);
@@ -1489,6 +1409,8 @@ function BatchCard({
   const archiveLabel = batch.archiveReason === "exported" ? "已导出"
     : batch.archiveReason === "committed" ? "已入库"
     : "已归档";
+  /** 该批次是否有任何条目被多选 */
+  const batchHasSelection = batch.facts.some((f) => selectedFactIds.has(f.factId));
   /** 进度条比例：审核完毕（通过+拒绝）/ 总数 */
   const total = batch.facts.length;
   const reviewed = approved + rejected;
@@ -1496,7 +1418,7 @@ function BatchCard({
   /** 是否全部审核完毕（可入库/归档） */
   const fullyReviewed = !isArchived && total > 0 && pending === 0;
 
-  /** 单批次导出为 Excel：把整个批次的 fact 一次性导出，主要给已归档批次提供独立导出入口 */
+  /** 单批次导出 CSV：把整个批次的 fact 一次性导出，主要给已归档批次提供独立导出入口 */
   const handleExportThisBatch = () => {
     const rows = batch.facts.map((f) => ({ batch, fact: f }));
     if (rows.length === 0) { MessagePlugin.warning("批次内无事实可导出"); return; }
@@ -1504,7 +1426,7 @@ function BatchCard({
     setBatches((prev) => prev.map((b) => b.batchId !== batch.batchId ? b : {
       ...b,
       exportedAt: nowStr(),
-      facts: b.facts.map((f) => ({ ...f, logs: [...f.logs, mkLog("编辑", `导出此批次为 Excel（${filename}）`)] })),
+      facts: b.facts.map((f) => ({ ...f, logs: [...f.logs, mkLog("编辑", `导出此批次为 CSV（${filename}）`)] })),
     }));
     MessagePlugin.success(`已导出批次 ${batch.batchId}（${rows.length} 条事实）`);
   };
@@ -1645,20 +1567,12 @@ function BatchCard({
         style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "var(--td-bg-color-secondarycontainer)", cursor: "pointer", userSelect: "none" }}
         onClick={toggle}
       >
-        {/* 批次级 checkbox：仅在批量审核 / 导出 CSV 模式下显示，且仅待处理批次 */}
-        {!isArchived && actionMode === "review" && (
+        {/* 整批多选 Checkbox（仅待处理批次显示） */}
+        {!isArchived && (
           <Checkbox
             checked={batch.facts.length > 0 && batch.facts.every((f) => selectedFactIds.has(f.factId))}
             indeterminate={batch.facts.some((f) => selectedFactIds.has(f.factId)) && !batch.facts.every((f) => selectedFactIds.has(f.factId))}
             onChange={() => onToggleBatch(batch)}
-            onClick={(e) => e.stopPropagation()}
-            style={{ flexShrink: 0 }}
-          />
-        )}
-        {!isArchived && actionMode === "export" && (
-          <Checkbox
-            checked={selectedBatchIds.has(batch.batchId)}
-            onChange={() => onToggleBatchForExport(batch.batchId)}
             onClick={(e) => e.stopPropagation()}
             style={{ flexShrink: 0 }}
           />
@@ -1709,8 +1623,8 @@ function BatchCard({
               ? "收起"
               : batch.mode === "文件解析" ? "查看来源内容" : "查看原文"}
           </Button>
-          {/* 整批操作按钮：默认/批量审核态显示；导出 CSV 模式隐藏（避免视觉干扰） */}
-          {!isArchived && actionMode !== "export" && pending > 0 && (() => {
+          {/* 全局无多选时显示整批操作；有任何多选时统一走顶部批量操作栏 */}
+          {!isArchived && !hasAnySelection && pending > 0 && (() => {
             const hasReviewed = approved + rejected > 0;
             const approveLabel = hasReviewed ? "剩余全部通过" : "整批通过";
             const rejectLabel  = hasReviewed ? "剩余全部拒绝" : "整批拒绝";
@@ -1733,8 +1647,8 @@ function BatchCard({
               </>
             );
           })()}
-          {/* 全部审核完毕：入库/归档此批次（默认/批量审核态显示，导出态隐藏） */}
-          {fullyReviewed && actionMode !== "export" && (
+          {/* 全部审核完毕：入库/归档此批次（替代整批通过/拒绝） */}
+          {fullyReviewed && !hasAnySelection && (
             <Tooltip content={`入库本批次 ${approved} 条已审核事实，并归档此批次`}>
               <Button variant="outline" size="small" theme="success" onClick={(e) => { e.stopPropagation(); handleCommitBatch(); }}>
                 入库 / 归档批次
@@ -1743,7 +1657,7 @@ function BatchCard({
           )}
           {/* 已归档批次：committed 不可取消（已入库，缓冲池只读快照）；exported 允许取消归档恢复审核 */}
           {isArchived && (
-            <Tooltip content={`导出此批次（${batch.facts.length} 条）为 Excel 快照`}>
+            <Tooltip content={`导出此批次（${batch.facts.length} 条）为 CSV 快照`}>
               <Button variant="text" size="small" theme="primary" icon={<AttachIcon />} onClick={(e) => { e.stopPropagation(); handleExportThisBatch(); }}>
                 导出
               </Button>
@@ -1761,8 +1675,8 @@ function BatchCard({
               <Button variant="outline" size="small" theme="warning" onClick={(e) => { e.stopPropagation(); onUnarchive(batch.batchId); }}>恢复审核</Button>
             </Tooltip>
           )}
-          {/* 删除批次按钮（默认/批量审核态显示，导出态隐藏） */}
-          {actionMode !== "export" && (
+          {/* 全局无多选时显示删除批次（× 图标） */}
+          {!hasAnySelection && (
             <Tooltip content="删除整个批次">
               <Button
                 variant="text"
@@ -1820,7 +1734,6 @@ function BatchCard({
                 index={idx}
                 isLast={idx === visibleFacts.length - 1}
                 readOnly={isArchived}
-                mode={actionMode}
                 selected={selectedFactIds.has(fact.factId)}
                 onToggleSelect={() => onToggleSelect(fact.factId)}
                 onApprove={() => updateFact(fact.factId, { status: "已审核" }, mkLog("通过", "审核通过"))}
@@ -1855,15 +1768,13 @@ function BatchCard({
 
 // ─── 单条事实行 ───────────────────────────────────────────────────────────────
 function FactRow({
-  fact, index, isLast, readOnly, mode, selected, onToggleSelect,
+  fact, index, isLast, readOnly, selected, onToggleSelect,
   onApprove, onReject, onRevoke, onDelete, onUpdate,
 }: {
   fact: ExtractedFact;
   index: number;
   isLast: boolean;
   readOnly: boolean;
-  /** 当前操作模式：none / review / export */
-  mode: "none" | "review" | "export";
   selected: boolean;
   onToggleSelect: () => void;
   onApprove: () => void;
@@ -1891,8 +1802,8 @@ function FactRow({
         background: selected ? "rgba(0,82,217,0.05)" : "transparent",
         transition: "background .15s",
       }}>
-        {/* 多选框（仅批量审核模式可见）+ 序号 */}
-        {!readOnly && actionMode === "review" && (
+        {/* 多选框（仅待处理可见）+ 序号 */}
+        {!readOnly && (
           <Checkbox checked={selected} onChange={onToggleSelect} style={{ flexShrink: 0, marginTop: 2 }} />
         )}
         <div style={{ width: 20, height: 20, borderRadius: "50%", background: "var(--td-bg-color-component)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "var(--td-text-color-placeholder)", flexShrink: 0, marginTop: 2 }}>
@@ -2141,13 +2052,13 @@ function FactRow({
             </Tooltip>
           </Space>
 
-          {/* 分隔线（导出模式下隐藏审核操作区） */}
-          {!readOnly && actionMode !== "export" && (
+          {/* 分隔线 */}
+          {!readOnly && (
             <div style={{ width: "100%", height: 1, background: "var(--td-component-stroke)" }} />
           )}
 
-          {/* 组 2（下）：审批操作（通过 / 拒绝 / 撤回），竖排；导出模式下隐藏 */}
-          {!readOnly && actionMode !== "export" && (
+          {/* 组 2（下）：审批操作（通过 / 拒绝 / 撤回），竖排 */}
+          {!readOnly && (
             <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "stretch" }}>
               {fact.status === "待审核" && <>
                 <Button variant="outline" theme="success" size="small" icon={<CheckIcon />} onClick={onApprove} style={{ justifyContent: "center" }}>通过</Button>
