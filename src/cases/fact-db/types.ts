@@ -44,7 +44,9 @@ export interface Fact {
   relatedEvents?: string;
   conflict?: string;
   duplicate?: string;
-  /** 向量同步状态：编辑保存后系统自动同步到向量检索服务，此字段仅暴露失败情况，不提供主动上传操作 */
+  /** upload_status：后端自动维护的同步状态（pending/need_update/done/failed） */
+  uploadStatus?: UploadStatus;
+  /** 兼容旧 demo 字段：向量同步状态（success/failed/pending） */
   syncStatus?: SyncStatus;
   /** 同步失败时的错误信息（用于运维排查） */
   syncError?: string;
@@ -53,7 +55,10 @@ export interface Fact {
   logs?: OperationLog[];
 }
 
-/** 向量同步状态：success 占绝大多数（保存即同步），failed 用于暴露需要关注的异常 */
+/** upload_status：后端自动维护的同步状态 */
+export type UploadStatus = "pending" | "need_update" | "done" | "failed";
+
+/** 兼容旧 demo 字段：success 占绝大多数（保存即同步），failed 用于暴露需要关注的异常 */
 export type SyncStatus = "success" | "failed" | "pending";
 
 /** 抽取缓冲池条目：提取后先进缓冲池，审核通过才入库 */

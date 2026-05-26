@@ -9,7 +9,7 @@ import FactDialog from "./FactDialog";
 import ImportDialog from "./ImportDialog";
 import OperationLogDialog from "./OperationLogDialog";
 import CategoryDialog from "./CategoryDialog";
-import type { Fact, CategoryNode, FactStatus, FactEnv } from "../types";
+import type { Fact, CategoryNode, FactStatus, FactEnv, UploadStatus } from "../types";
 import { STATUS_TRANSITIONS } from "../types";
 
 // ── 环境 Context（由 App 透传）─────────────────────────────────────────────
@@ -24,6 +24,20 @@ function ExpandableCell({ text }: { text: string }) {
       {text}
     </div>
   );
+}
+
+const UPLOAD_STATUS_CONFIG: Record<UploadStatus, { label: string; theme: "success" | "warning" | "danger" | "default"; tip: string }> = {
+  pending:     { label: "待上传", theme: "default", tip: "还没上传过，等待后端自动同步" },
+  need_update: { label: "待更新", theme: "warning", tip: "已上传过但内容更新了，需要重新上传" },
+  done:        { label: "已上传", theme: "success", tip: "当前已成功同步到 RAG/Bot" },
+  failed:      { label: "上传失败", theme: "danger",  tip: "同步失败，后端会自动重试" },
+};
+
+function normalizeUploadStatus(row: Fact): UploadStatus {
+  if (row.uploadStatus) return row.uploadStatus;
+  if (row.syncStatus === "failed") return "failed";
+  if (row.syncStatus === "pending") return "pending";
+  return "done";
 }
 
 export default function FactTab({ env }: FactTabProps) {
@@ -286,8 +300,8 @@ export default function FactTab({ env }: FactTabProps) {
 
   const columns = [
     { colKey: "row-select", type: "multiple" as const, width: 40 },
-    { colKey: "id", title: "ID", width: 80, cell: ({ row }: { row: Fact }) => <span style={{ whiteSpace: "nowrap" }}>{row.id}</span> },
-    { colKey: "title", title: "标题", width: 280, ellipsis: true },
+    { colKey: "id", title: "事实ID", width: 90, cell: ({ row }: { row: Fact }) => <span style={{ whiteSpace: "nowrap" }}>{row.id}</span> },
+    { colKey: "title", title: "标题", width: 260, ellipsis: true },
     { colKey: "content", title: "事实内容", width: 380, cell: ({ row }: { row: Fact }) => <ExpandableCell text={row.content} /> },
     {
       colKey: "status", title: "状态", width: 90,
@@ -300,25 +314,29 @@ export default function FactTab({ env }: FactTabProps) {
       colKey: "syncStatus",
       title: () => (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-          同步状态
+          上传状态
           <Tooltip
             placement="top"
             overlayStyle={{ maxWidth: 320 }}
             content={
               <div style={{ fontSize: 12, lineHeight: 1.7 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>向量检索同步状态</div>
-                <div>事实保存后系统自动同步到向量检索服务，无需手动操作。此列仅暴露异常情况，便于及时排查。</div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>upload_status 上传状态</div>
+                <div>事实保存后系统自动同步到 RAG/Bot，无需手动操作。此列用于发现待上传、待更新或上传失败的异常。</div>
                 <div style={{ marginTop: 6 }}>
-                  <Tag theme="success" variant="light" size="small">已同步</Tag>
-                  <span style={{ marginLeft: 6 }}>同步成功（默认）</span>
+                  <Tag theme="success" variant="light" size="small">已上传</Tag>
+                  <span style={{ marginLeft: 6 }}>当前已成功同步到 RAG/Bot</span>
                 </div>
                 <div style={{ marginTop: 4 }}>
-                  <Tag theme="warning" variant="light" size="small">同步中</Tag>
-                  <span style={{ marginLeft: 6 }}>排队中或处理中</span>
+                  <Tag theme="default" variant="light" size="small">待上传</Tag>
+                  <span style={{ marginLeft: 6 }}>还没上传过</span>
                 </div>
                 <div style={{ marginTop: 4 }}>
-                  <Tag theme="danger" variant="light" size="small">同步失败</Tag>
-                  <span style={{ marginLeft: 6 }}>需关注，可点击重试</span>
+                  <Tag theme="warning" variant="light" size="small">待更新</Tag>
+                  <span style={{ marginLeft: 6 }}>内容更新后等待重新上传</span>
+                </div>
+                <div style={{ marginTop: 4 }}>
+                  <Tag theme="danger" variant="light" size="small">上传失败</Tag>
+                  <span style={{ marginLeft: 6 }}>后端会自动重试</span>
                 </div>
               </div>
             }
@@ -329,49 +347,29 @@ export default function FactTab({ env }: FactTabProps) {
       ),
       width: 110,
       cell: ({ row }: { row: Fact }) => {
-        const status = row.syncStatus ?? "success";
-        if (status === "success") {
-          return (
-            <Tooltip content={row.syncAt ? `同步成功 · ${row.syncAt}` : "同步成功"}>
-              <Tag theme="success" variant="light" size="small">已同步</Tag>
-            </Tooltip>
-          );
-        }
-        if (status === "pending") {
-          return (
-            <Tooltip content="同步任务排队中，通常在数秒内完成">
-              <Tag theme="warning" variant="light" size="small">同步中</Tag>
-            </Tooltip>
-          );
-        }
-        // failed：用红 Tag + 重试按钮
+        const status = normalizeUploadStatus(row);
+        const cfg = UPLOAD_STATUS_CONFIG[status];
         return (
           <Tooltip
             placement="left"
             overlayStyle={{ maxWidth: 320 }}
             content={
               <div style={{ fontSize: 12, lineHeight: 1.7 }}>
-                <div style={{ color: "#ff7575", fontWeight: 500 }}>⚠ 同步失败</div>
-                {row.syncError && <div style={{ marginTop: 4 }}>{row.syncError}</div>}
-                {row.syncAt && <div style={{ marginTop: 4, opacity: 0.7 }}>失败时间：{row.syncAt}</div>}
-                <div style={{ marginTop: 6, opacity: 0.7 }}>点击 Tag 触发重试</div>
+                <div style={{ fontWeight: 500 }}>{cfg.label}</div>
+                <div style={{ marginTop: 4 }}>{cfg.tip}</div>
+                {status === "failed" && row.syncError && <div style={{ marginTop: 4, color: "#ff7575" }}>{row.syncError}</div>}
+                {row.syncAt && <div style={{ marginTop: 4, opacity: 0.7 }}>最近同步时间：{row.syncAt}</div>}
               </div>
             }
           >
-            <Tag
-              theme="danger"
-              variant="light"
-              size="small"
-              style={{ cursor: "pointer" }}
-              onClick={() => MessagePlugin.info(`已重新提交同步任务（事实 ${row.id}）`)}
-            >
-              ⚠ 同步失败
+            <Tag theme={cfg.theme} variant="light" size="small" style={{ cursor: "default" }}>
+              {status === "failed" ? "⚠ " : ""}{cfg.label}
             </Tag>
           </Tooltip>
         );
       },
     },
-    { colKey: "keywords", title: "关联实体", width: 200, cell: ({ row }: { row: Fact }) => {
+    { colKey: "keywords", title: "关联实体ID（多个用英文逗号分隔）", width: 240, cell: ({ row }: { row: Fact }) => {
       const items = row.keywords.split(",").map((s) => s.trim()).filter(Boolean);
       if (items.length === 0 || (items.length === 1 && items[0] === "-")) return <span>-</span>;
       return (
@@ -384,10 +382,13 @@ export default function FactTab({ env }: FactTabProps) {
     }},
     { colKey: "sourceType", title: "来源类型", width: 140, ellipsis: true },
     { colKey: "source", title: "来源", width: 180, ellipsis: true },
+    { colKey: "sourceUrl", title: "来源URL", width: 180, ellipsis: true },
     { colKey: "sourceContent", title: "来源内容", width: 260, cell: ({ row }: { row: Fact }) => <ExpandableCell text={row.sourceContent || "-"} /> },
     { colKey: "startTime", title: "开始时间", width: 170, cell: ({ row }: { row: Fact }) => <span style={{ whiteSpace: "nowrap" }}>{row.startTime || "-"}</span> },
     { colKey: "endTime", title: "结束时间", width: 170, cell: ({ row }: { row: Fact }) => <span style={{ whiteSpace: "nowrap" }}>{row.endTime || "-"}</span> },
-    { colKey: "conflict", title: "矛盾事实", width: 200, cell: ({ row }: { row: Fact }) => {
+    { colKey: "timeDesc", title: "时间描述", width: 180, ellipsis: true },
+    { colKey: "relatedEvents", title: "关联事件ID（多个用英文逗号分隔）", width: 220, ellipsis: true },
+    { colKey: "conflict", title: "矛盾事实ID（多个用英文逗号分隔）", width: 240, cell: ({ row }: { row: Fact }) => {
       if (!row.conflict || row.conflict === "-") return <span>-</span>;
       const items = row.conflict.split(",").map((s) => s.trim()).filter(Boolean);
       return (
@@ -420,27 +421,29 @@ export default function FactTab({ env }: FactTabProps) {
 
   return (
     <div className="factdb-tab-content">
-      {/* 统计栏 */}
+      {/* 统计栏：review_status + upload_status 并行 */}
       <div className="page-stats">
         <span className="stat-item">共 <b className="stat-num">{facts.length}</b> 条事实</span>
         <span className="stat-divider">·</span>
-        <span className="stat-item">已上线 <b className="stat-num" style={{ color: "var(--td-success-color)" }}>{facts.filter(f => f.status === "已上线").length}</b></span>
-        <span className="stat-divider">·</span>
-        <span className="stat-item">已审核 <b className="stat-num" style={{ color: "var(--td-brand-color)" }}>{facts.filter(f => f.status === "已审核").length}</b></span>
+        <span className="stat-item">已审核 <b className="stat-num" style={{ color: "var(--td-brand-color)" }}>{facts.filter(f => f.status === "已审核" || f.status === "已上线" || f.status === "已下线").length}</b></span>
         <span className="stat-divider">·</span>
         <span className="stat-item">待审核 <b className="stat-num" style={{ color: "var(--td-warning-color)" }}>{facts.filter(f => f.status === "待审核").length}</b></span>
         <span className="stat-divider">·</span>
-        <span className="stat-item">已下线 <b className="stat-num" style={{ color: "var(--td-text-color-placeholder)" }}>{facts.filter(f => f.status === "已下线").length}</b></span>
-        {facts.filter(f => f.syncStatus === "failed").length > 0 && (
+        <span className="stat-item">已上传 <b className="stat-num" style={{ color: "var(--td-success-color)" }}>{facts.filter(f => normalizeUploadStatus(f) === "done").length}</b></span>
+        <span className="stat-divider">·</span>
+        <span className="stat-item">待上传 <b className="stat-num" style={{ color: "var(--td-text-color-placeholder)" }}>{facts.filter(f => normalizeUploadStatus(f) === "pending").length}</b></span>
+        <span className="stat-divider">·</span>
+        <span className="stat-item">待更新 <b className="stat-num" style={{ color: "var(--td-warning-color)" }}>{facts.filter(f => normalizeUploadStatus(f) === "need_update").length}</b></span>
+        {facts.filter(f => normalizeUploadStatus(f) === "failed").length > 0 && (
           <>
             <span className="stat-divider">·</span>
-            <Tooltip content="点击筛选所有同步失败的事实">
+            <Tooltip content="点击筛选所有上传失败的事实">
               <span
                 className="stat-item"
                 style={{ cursor: "pointer", color: "var(--td-error-color)" }}
-                onClick={() => MessagePlugin.info("已为你筛选同步失败的事实（demo 占位，可接入实际筛选）")}
+                onClick={() => MessagePlugin.info("已为你筛选上传失败的事实（demo 占位，可接入实际筛选）")}
               >
-                ⚠ 同步失败 <b className="stat-num" style={{ color: "var(--td-error-color)" }}>{facts.filter(f => f.syncStatus === "failed").length}</b>
+                ⚠ 上传失败 <b className="stat-num" style={{ color: "var(--td-error-color)" }}>{facts.filter(f => normalizeUploadStatus(f) === "failed").length}</b>
               </span>
             </Tooltip>
           </>

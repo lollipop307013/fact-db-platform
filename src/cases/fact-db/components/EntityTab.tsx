@@ -145,16 +145,8 @@ export default function EntityTab() {
   const columns = [
     { colKey: "row-select", type: "multiple" as const, width: 40 },
     { colKey: "id", title: "ID", width: 80 },
-    { colKey: "title", title: "名称", width: 120 },
-    { colKey: "alias", title: "别名", width: 180, cell: ({ row }: { row: Entity }) => {
-      if (!row.alias || row.alias === "-") return <span style={{ color: "var(--td-text-color-placeholder)" }}>-</span>;
-      return (
-        <Tooltip content={row.alias}>
-          <span style={{ cursor: "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{row.alias}</span>
-        </Tooltip>
-      );
-    }},
-    { colKey: "tag", title: "分类", width: 160, cell: ({ row }: { row: Entity }) => {
+    { colKey: "title", title: "实体名称", width: 140 },
+    { colKey: "tag", title: "标签（多个用英文逗号分隔）", width: 210, cell: ({ row }: { row: Entity }) => {
       const tags = row.tag.split(/[,，]/).map((t) => t.trim()).filter(Boolean);
       return (
         <Space size="small" style={{ flexWrap: "nowrap", overflow: "hidden" }}>
@@ -162,11 +154,18 @@ export default function EntityTab() {
         </Space>
       );
     }},
-    { colKey: "source", title: "来源", width: 80 },
+    { colKey: "alias", title: "别名（多个用英文逗号分隔）", width: 220, cell: ({ row }: { row: Entity }) => {
+      if (!row.alias || row.alias === "-") return <span style={{ color: "var(--td-text-color-placeholder)" }}>-</span>;
+      return (
+        <Tooltip content={row.alias}>
+          <span style={{ cursor: "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{row.alias}</span>
+        </Tooltip>
+      );
+    }},
+    { colKey: "description", title: "简介", ellipsis: true },
     { colKey: "status", title: "审核状态", width: 90, cell: ({ row }: { row: Entity }) => (
       <Tag theme={statusTheme[row.status] || "default"} variant="light">{row.status}</Tag>
     )},
-    { colKey: "description", title: "描述", ellipsis: true },
     { colKey: "op", title: "操作", width: 180, fixed: "right" as const, cell: ({ row }: { row: Entity }) => (
       <Space size={4}>
         <Button variant="text" theme="primary" size="small" onClick={() => handleEdit(row)}>编辑</Button>

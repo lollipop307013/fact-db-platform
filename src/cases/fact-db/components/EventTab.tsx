@@ -86,18 +86,17 @@ export default function EventTab() {
 
   const columns = [
     { colKey: "id", title: "ID", width: 80 },
-    { colKey: "name", title: "名称", width: 150 },
-    { colKey: "alias", title: "别名", width: 180, cell: ({ row }: { row: GameEvent }) => {
+    { colKey: "name", title: "事件名称", width: 150 },
+    { colKey: "eventType", title: "标签（多个用英文逗号分隔）", width: 190, cell: ({ row }: { row: GameEvent }) => <Tag variant="light">{row.eventType}</Tag> },
+    { colKey: "alias", title: "别名（多个用英文逗号分隔）", width: 220, cell: ({ row }: { row: GameEvent }) => {
       if (!row.alias || row.alias === "-") return <span style={{ color: "var(--td-text-color-placeholder)" }}>-</span>;
       return <Tooltip content={row.alias}>
         <span style={{ cursor: "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{row.alias}</span>
       </Tooltip>;
     }},
-    { colKey: "description", title: "描述", width: 150, ellipsis: true },
-    { colKey: "eventType", title: "事件分类", width: 90, cell: ({ row }: { row: GameEvent }) => <Tag variant="light">{row.eventType}</Tag> },
     { colKey: "startTime", title: "开始时间", width: 170 },
     { colKey: "endTime", title: "结束时间", width: 170 },
-    { colKey: "source", title: "来源", width: 60 },
+    { colKey: "description", title: "时间描述", width: 180, ellipsis: true },
     { colKey: "op", title: "操作", width: 180, fixed: "right" as const, cell: ({ row }: { row: GameEvent }) => (
       <Space size={4}>
         <Button variant="text" theme="primary" size="small" onClick={() => handleEdit(row)}>编辑</Button>
