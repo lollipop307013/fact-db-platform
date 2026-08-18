@@ -1049,12 +1049,17 @@ export default function ReviewTab({ locator }: { locator?: ReviewLocator | null 
                       )}
                     </span>
                     <Tag size="small" className={`review-grid-type type-${item.objectType}`}>{OBJECT_TYPE_LABELS[item.objectType]}</Tag>
-                    {item.conflictType ? (
+                    {/* 删除类型始终展示「删除」，不与冲突/重复混用 */}
+                    {item.changeType === "delete" ? (
+                      <Tag size="small" theme="danger" variant="light">
+                        {CHANGE_TYPE_LABELS[item.changeType]}
+                      </Tag>
+                    ) : item.conflictType ? (
                       <Tag size="small" theme="danger" variant="light">
                         {CONFLICT_TYPE_LABELS[item.conflictType] ?? "冲突"}
                       </Tag>
                     ) : (
-                      <Tag size="small" theme={item.changeType === "delete" ? "danger" : item.changeType === "update" ? "warning" : "primary"} variant="light">
+                      <Tag size="small" theme={item.changeType === "update" ? "warning" : "primary"} variant="light">
                         {CHANGE_TYPE_LABELS[item.changeType]}
                       </Tag>
                     )}
@@ -1438,10 +1443,12 @@ function DiffPanel(props: {
             <span className="diff-panel-title">审核详情</span>
             <span className="diff-panel-comparison-target">{getComparisonTargetLabel(item, baseFields)}</span>
             <Tag size="small" className={`type-tag type-${item.objectType}`}>{objLabel}</Tag>
-            <span className="review-change-type" data-type={item.conflictType || item.changeType}>
-              {item.conflictType
-                ? (CONFLICT_TYPE_LABELS[item.conflictType] || item.conflictType)
-                : CHANGE_TYPE_LABELS[item.changeType]}
+            <span className="review-change-type" data-type={item.changeType === "delete" ? "delete" : item.conflictType || item.changeType}>
+              {item.changeType === "delete"
+                ? CHANGE_TYPE_LABELS[item.changeType]
+                : (item.conflictType
+                  ? (CONFLICT_TYPE_LABELS[item.conflictType] || item.conflictType)
+                  : CHANGE_TYPE_LABELS[item.changeType])}
             </span>
             <PriorityTag priority={getReviewPriority(item)} />
           </div>
@@ -1985,7 +1992,9 @@ function RawConfigCompare(props: {
                   : getObjectId(item)}
               </strong>
             </div>
-            <small className="raw-config-swimlane-meta">待入库</small>
+            <small className="raw-config-swimlane-meta">
+              {item.changeType === "delete" ? "待删除" : item.changeType === "update" ? "待更新" : item.changeType === "new" ? "待入库" : "待处理"}
+            </small>
           </header>
           <div className="raw-config-swimlane-body">
             {item.changeType === "delete" ? (
