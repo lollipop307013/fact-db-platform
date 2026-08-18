@@ -226,7 +226,7 @@ export default function ErrorDetectTab() {
           {/* 检测结果 - 使用 TDesign Card */}
           <Card bordered style={{ marginTop: 16 }} header={
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
-              <span style={{ fontSize: 16, fontWeight: 600 }}>检测结果</span>
+              <span style={{ fontSize: 15, fontWeight: 600 }}>检测结果</span>
               <Space size={12} align="center">
                 <Checkbox checked={hideNoError} onChange={(v) => setHideNoError(v as boolean)}>隐藏无错误事实</Checkbox>
                 <Input
@@ -273,7 +273,7 @@ function FactResultCard({ fact, phase }: { fact: FactResult; phase: string }) {
     <div className="qa-fact-card" style={{ borderLeftColor: borderColor, marginBottom: 0 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <Space size={12} align="center">
-          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--td-brand-color)" }}>事实 #{fact.id}</span>
+          <span style={{ fontSize: 15, fontWeight: 600, color: "var(--td-brand-color)" }}>事实 #{fact.id}</span>
           {isFixed ? (
             isNoError ? (
               <Tag theme="success" variant="light"><CheckCircleFilledIcon style={{ marginRight: 4 }} />无错误</Tag>
@@ -297,7 +297,7 @@ function FactResultCard({ fact, phase }: { fact: FactResult; phase: string }) {
         </div>
       )}
 
-      <div style={{ fontSize: 14, lineHeight: 1.8, color: "var(--td-text-color-primary)" }}>
+      <div style={{ fontSize: 13, lineHeight: 1.8, color: "var(--td-text-color-primary)" }}>
         {fact.content}
       </div>
     </div>

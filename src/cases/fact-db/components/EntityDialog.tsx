@@ -1,147 +1,235 @@
-import React, { useState, useEffect } from "react";
-import { Dialog, Form, Input, Select, Textarea, Tag, Space, Button, Switch, Tooltip, MessagePlugin } from "tdesign-react";
-import { HelpCircleIcon } from "tdesign-icons-react";
-import { tagOptions } from "../mock";
-import type { Entity } from "../types";
+import React, { useLayoutEffect, useState, useEffect } from "react";
+import { Dialog, Form, Input, Textarea, Select, Switch, MessagePlugin } from "tdesign-react";
+import type { ContentLanguage, Entity, LocalizedContent } from "../types";
+import { languageOptions, tagOptions } from "../mock";
+import EditorField from "./EditorField";
 
-const { FormItem } = Form;
-
-const langTabs = [
-  { label: "中文", value: "zh" },
-  { label: "English", value: "en" },
-  { label: "العربية", value: "ar" },
-  { label: "Türkçe", value: "tr" },
-  { label: "Русский", value: "ru" },
-  { label: "粤语", value: "yue" },
-];
-
-const auditStatusOptions = [
-  { label: "待审核", value: "待审核" },
-  { label: "已审核", value: "已审核" },
-  { label: "已拒绝", value: "已拒绝" },
-];
-
-interface EntityDialogProps {
+interface Props {
   visible: boolean;
   mode: "create" | "edit";
   entity?: Entity | null;
   onClose: () => void;
-  onSave?: (diffSummary: string) => void;
+  onSave?: (diffSummary: string, updatedFields: Partial<Entity>) => void;
 }
 
-function diffField(label: string, oldVal: string | undefined, newVal: string, isLong = false): string | null {
-  const o = (oldVal ?? "").trim();
-  const n = newVal.trim();
-  if (o === n) return null;
-  if (isLong) return `修改${label}`;
-  if (!o) return `设置${label}：${n}`;
-  return `修改${label}：「${o}」→「${n}」`;
+type LocalizedDraft = Record<ContentLanguage, { title: string; alias: string; description: string }>;
+
+type FormModel = {
+  /** 中文名称（兼容与展示用，真实值在 localized[zh].title） */
+  title: string;
+  categories: string[];
+  isCategory: boolean;
+  localized: LocalizedDraft;
+};
+
+const languageCodes: ContentLanguage[] = ["zh", "en", "ar", "tr", "ru", "yue"];
+
+function createLocalizedDraft(source?: LocalizedContent, alias = "", description = ""): LocalizedDraft {
+  return languageCodes.reduce<LocalizedDraft>((result, language) => {
+    result[language] = {
+      title: source?.[language]?.title || (language === "zh" ? alias : ""),
+      alias: source?.[language]?.alias || (language === "zh" ? alias : ""),
+      description: source?.[language]?.description || (language === "zh" ? description : ""),
+    };
+    return result;
+  }, {} as LocalizedDraft);
 }
 
-export default function EntityDialog({ visible, mode, entity, onClose, onSave }: EntityDialogProps) {
-  const [tags, setTags] = useState<string[]>([]);
-  const [activeLang, setActiveLang] = useState("zh");
-  const [name, setName] = useState("");
-  const [alias, setAlias] = useState("");
-  const [description, setDescription] = useState("");
-  const [status, setStatus] = useState("待审核");
-  const [isCategory, setIsCategory] = useState(false);
+const emptyModel: FormModel = {
+  title: "",
+  categories: ["角色"],
+  isCategory: false,
+  localized: createLocalizedDraft(),
+};
 
-  useEffect(() => {
-    if (visible && mode === "edit" && entity) {
-      setTags(entity.tag ? [entity.tag] : []);
-      setName(entity.title);
-      setDescription(entity.description);
-      setStatus(entity.status);
-      setAlias(entity.alias || "");
-    } else if (visible && mode === "create") {
-      setTags([]);
-      setName("");
-      setAlias("");
-      setDescription("");
-      setStatus("待审核");
-      setIsCategory(false);
+function splitCategories(value?: string) {
+  return value ? value.split(/[,，]/).map((item) => item.trim()).filter(Boolean) : [];
+}
+
+function asStringArray(value: unknown) {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function toLocalizedContent(localized: LocalizedDraft): LocalizedContent {
+  return languageCodes.reduce<LocalizedContent>((result, language) => {
+    const value = localized[language];
+    const title = value.title.trim();
+    const alias = value.alias.trim();
+    const description = value.description.trim();
+    if (title || alias || description) {
+      result[language] = {
+        ...(title ? { title } : {}),
+        ...(alias ? { alias } : {}),
+        ...(description ? { description } : {}),
+      };
     }
-    setActiveLang("zh");
+    return result;
+  }, {});
+}
+
+function getDiffSummary(initial: FormModel, next: FormModel) {
+  const changed: string[] = [];
+  if (JSON.stringify(initial.localized) !== JSON.stringify(next.localized)) {
+    const titleLangs: string[] = [];
+    for (const lang of languageCodes) {
+      if (initial.localized[lang].title !== next.localized[lang].title) {
+        titleLangs.push(lang);
+      }
+    }
+    if (titleLangs.length > 0) {
+      changed.push(`名称（${titleLangs.join("/")}）已更新`);
+    } else {
+      changed.push("多语言别名或描述已更新");
+    }
+  }
+  if (JSON.stringify(initial.categories) !== JSON.stringify(next.categories)) changed.push("分类已更新");
+  if (initial.isCategory !== next.isCategory) changed.push(`分类节点：${next.isCategory ? "启用" : "关闭"}`);
+  return changed.length > 0 ? changed.join("；") : "未修改具体字段";
+}
+
+function createFormModel(entity?: Entity | null): FormModel {
+  if (!entity) return { ...emptyModel, categories: [...emptyModel.categories], localized: createLocalizedDraft() };
+  const localized = createLocalizedDraft(entity.translations, entity.alias || "", entity.description || "");
+  // 兼容旧实体：title 字段为空时回落到 entity.title
+  if (!localized.zh.title && entity.title) localized.zh.title = entity.title;
+  return {
+    title: entity.title || "",
+    categories: entity.categories?.length ? entity.categories : splitCategories(entity.tag),
+    isCategory: Boolean(entity.isCategory),
+    localized,
+  };
+}
+
+export default function EntityDialog({ visible, mode, entity, onClose, onSave }: Props) {
+  const initialModel = mode === "edit" ? createFormModel(entity) : createFormModel();
+  const [form, setForm] = useState<FormModel>(initialModel);
+  const [initial, setInitial] = useState<FormModel>(initialModel);
+  const [activeLanguage, setActiveLanguage] = useState<ContentLanguage>("zh");
+
+  useLayoutEffect(() => {
+    if (!visible) return;
+    const next = mode === "edit" ? createFormModel(entity) : createFormModel();
+    setForm(next);
+    setInitial(next);
+    setActiveLanguage("zh");
   }, [visible, mode, entity]);
 
-  const handleSave = () => {
-    if (!name.trim()) { MessagePlugin.warning("请输入名称"); return; }
-    let diffSummary = mode === "create" ? "新建实体" : "";
-    if (mode === "edit" && entity) {
-      const changes: string[] = [];
-      const d = (label: string, o: string | undefined, n: string, isLong = false) => { const r = diffField(label, o, n, isLong); if (r) changes.push(r); };
-      d("名称",   entity.title,       name);
-      d("别名",   entity.alias,       alias);
-      d("描述",   entity.description, description, true);
-      d("分类标签", entity.tag,        tags[0] ?? "");
-      if (status !== entity.status) changes.push(`状态变更：${entity.status} → ${status}`);
-      diffSummary = changes.length > 0 ? changes.join("；") : "保存（无字段变更）";
+  const updateLocalized = (patch: Partial<LocalizedDraft[ContentLanguage]>) => {
+    setForm((previous) => ({
+      ...previous,
+      localized: {
+        ...previous.localized,
+        [activeLanguage]: { ...previous.localized[activeLanguage], ...patch },
+      },
+    }));
+  };
+
+  const handleSubmit = () => {
+    const zhTitle = form.localized.zh.title.trim();
+    if (!zhTitle) {
+      MessagePlugin.warning("请填写中文实体名称");
+      setActiveLanguage("zh");
+      return;
     }
+    const translations = toLocalizedContent(form.localized);
+    onSave?.(
+      mode === "create" ? "创建实体" : getDiffSummary(initial, form),
+      {
+        title: zhTitle,
+        tag: form.categories[0] || "未分类",
+        categories: form.categories,
+        alias: form.localized.zh.alias.trim(),
+        description: form.localized.zh.description.trim(),
+        translations,
+        isCategory: form.isCategory,
+      },
+    );
     MessagePlugin.success(mode === "create" ? "创建成功" : "保存成功");
-    onSave?.(diffSummary);
     onClose();
   };
 
-  const tagSelectOptions = tagOptions.filter((t) => t.value !== "all").map((t) => ({ label: t.label, value: t.value }));
-
   return (
+    <>
     <Dialog
       visible={visible}
-      header={mode === "create" ? "新建实体" : "编辑实体"}
-      width={640}
-      onClose={onClose}
-      footer={
-        <Space>
-          <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button theme="primary" onClick={handleSave}>保存</Button>
-        </Space>
+      header={
+        <div className="factdb-dialog-header">
+          <span>{mode === "create" ? "新建实体" : "编辑实体"}</span>
+        </div>
       }
+      width={820}
+      top="4vh"
+      placement="center"
+      destroyOnClose
+      className="factdb-edit-dialog factdb-edit-dialog--entity"
+      confirmBtn={{ content: mode === "create" ? "创建" : "保存", theme: "primary" }}
+      cancelBtn={{ content: "取消", variant: "outline" }}
+      onClose={onClose}
+      onConfirm={handleSubmit}
     >
-      <Form labelAlign="top" labelWidth={0}>
-        <FormItem label="名称" requiredMark>
-          <Input value={name} onChange={(v) => setName(v)} placeholder="请输入名称" />
-        </FormItem>
-
-        <FormItem label="分类（可多选）">
+      <Form layout="vertical" colon className="factdb-editor-form factdb-entity-editor">
+        <EditorField label="分类" requiredMark>
           <Select
             multiple
             filterable
-            options={tagSelectOptions}
-            value={tags}
-            onChange={(v) => setTags(v as string[])}
-            placeholder="搜索分类..."
+            value={form.categories}
+            onChange={(value) => setForm((state) => ({ ...state, categories: asStringArray(value) }))}
+            options={tagOptions.filter((option) => option.value !== "all").map((option) => ({ label: option.label, value: option.value }))}
+            placeholder="可多选实体分类"
           />
-        </FormItem>
+        </EditorField>
 
-        <FormItem label="多语言信息">
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-            {langTabs.map((lang) => (
-              <Tag
-                key={lang.value}
-                theme={activeLang === lang.value ? "primary" : "default"}
-                variant={activeLang === lang.value ? "dark" : "outline"}
-                onClick={() => setActiveLang(lang.value)}
-                style={{ cursor: "pointer" }}
-              >
-                {lang.label}
-              </Tag>
-            ))}
-          </div>
-        </FormItem>
+        <div className="factdb-language-tabs" role="tablist" aria-label="实体多语言信息">
+          {languageOptions.map((language) => (
+            <button
+              key={language.value}
+              type="button"
+              className={activeLanguage === language.value ? "is-active" : ""}
+              onClick={() => setActiveLanguage(language.value as ContentLanguage)}
+            >
+              {language.label}
+            </button>
+          ))}
+        </div>
 
-        <FormItem label="别名">
-          <Input value={alias} onChange={(v) => setAlias(v)} placeholder="请输入别名" />
-        </FormItem>
+        <div className="factdb-language-pane-label">
+          {languageOptions.find((l) => l.value === activeLanguage)?.label}
+          {activeLanguage === "zh" && <span className="factdb-required-mark">*</span>}
+        </div>
 
-        <FormItem label="描述">
-          <Textarea value={description} onChange={(v) => setDescription(v)} placeholder="请输入描述" autosize={{ minRows: 3 }} />
-        </FormItem>
+        <EditorField label={`实体名称 (${languageOptions.find((l) => l.value === activeLanguage)?.label})`} requiredMark={activeLanguage === "zh"}>
+          <Input
+            value={form.localized[activeLanguage].title}
+            onChange={(value) => updateLocalized({ title: value as string })}
+            placeholder={activeLanguage === "zh" ? "请输入实体名称" : "请输入该语言的实体名称（可留空）"}
+          />
+        </EditorField>
 
-        <FormItem label={<span>是否作为分类 <Tooltip content="该实体将作为分类被使用"><HelpCircleIcon style={{ cursor: "pointer", color: "var(--td-text-color-placeholder)", marginLeft: 4 }} /></Tooltip></span>}>
-          <Switch value={isCategory} onChange={(v) => setIsCategory(v)} />
-        </FormItem>
+        <EditorField label="别名">
+          <Textarea
+            value={form.localized[activeLanguage].alias}
+            onChange={(value) => updateLocalized({ alias: value as string })}
+            autosize={{ minRows: 3, maxRows: 6 }}
+            placeholder="每行一个别名，每个别名最多 30 字"
+          />
+        </EditorField>
+
+        <EditorField label="描述">
+          <Textarea
+            value={form.localized[activeLanguage].description}
+            onChange={(value) => updateLocalized({ description: value as string })}
+            autosize={{ minRows: 4, maxRows: 8 }}
+            placeholder="请输入实体描述"
+          />
+        </EditorField>
+
+        <div className="factdb-editor-inline-grid factdb-editor-inline-grid--entity">
+          <EditorField label="作为分类">
+            <Switch value={form.isCategory} size="small" onChange={(value) => setForm((state) => ({ ...state, isCategory: Boolean(value) }))} />
+          </EditorField>
+        </div>
       </Form>
     </Dialog>
+    </>
   );
 }

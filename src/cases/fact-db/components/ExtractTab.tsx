@@ -130,6 +130,8 @@ interface ExtractBatch {
   batchLabel: string;
   model: string;
   mode: string;
+  /** 提取语种：决定冲突/重复检测查询哪个语种的库、实体/事件匹配走哪个语种、审核通过后写入哪个 i18n 字段 */
+  extractLang: LangCode;
   facts: ExtractedFact[];
   expanded: boolean;
   /** 是否已归档：true=已归档区，false=待处理区 */
@@ -154,6 +156,10 @@ interface FileSegment {
   text: string;
   /** 是否勾选（默认全选，用户可取消） */
   selected: boolean;
+  /** 来源工作表类型：用于导入时定向处理 */
+  sheetType?: "entity" | "event" | "knowledge";
+  /** 原始行数据（用于提取入库映射） */
+  rowData?: Record<string, any>;
 }
 
 /** 当前登录用户（demo 中固定，实际接入时由登录态注入） */
@@ -362,6 +368,7 @@ const mockBatches: ExtractBatch[] = [
     extractor: CURRENT_USER,
     model: "deepseek-v3-2-251201",
     mode: "多段提取",
+    extractLang: "zh",
     sourceText: "在游戏地图'深海明珠'的A点，英雄'维斯'可以使用其基础技能'弧光玫瑰'进行防守。弧光玫瑰可部署在墙面或地面，部署后处于隐形状态，再次激活时可致盲所有注视该墙面的敌人，并会提供闪光命中的提示音。该技能可回收并重新部署，且通过辅助射击键可将玫瑰部署在墙体另一侧实现隔墙闪光。在防守深海明珠A点时，进攻方通常从A主门（经A大道）或水下路线推进。维斯可在A包点内侧墙面、A主门出口墙体背面或水下出口拐角等位置部署弧光玫瑰。当通过声音或道具信息判断敌人即将进点时，激活玫瑰致盲从A主门或水下拉出的敌人，随后可根据提示音判断命中人数，协同队友从掩体后拉出进行反清击杀，以打乱敌方进攻节奏。若敌方暂缓进攻，维斯可以回收玫瑰并重新部署到其他位置以灵活应对。\n\n在游戏地图日落之城的B点，英雄维斯的技能剃刀藤蔓是一个可投掷的陷阱装置，落地后隐形，可手动激活，激活后从地面伸出藤蔓，对范围内移动的敌人造成持续伤害与减速效果，并伴随较大声响；该技能可通过墙面反弹进行布置。\n\n在游戏地图日落之城的A点，英雄维斯的技能剃刀藤蔓是一个可投掷的陷阱装置，落地后隐形，可手动激活，激活后从地面伸出藤蔓，对范围内移动的敌人造成持续伤害与减速效果，并伴随较大声响。该技能可通过墙面反弹进行布置。",
     batchLabel: "在游戏地图'深海明珠'的A点，英雄'维斯'可以使用其基础技能'弧光玫瑰'进行防守…",
     expanded: true,
@@ -460,6 +467,7 @@ const mockBatches: ExtractBatch[] = [
     extractor: "zhaoweilin(林兆伟)",
     model: "deepseek-v3-2-251201",
     mode: "单段提取",
+    extractLang: "zh",
     sourceText: "在游戏地图「裂隙」C点，英雄「赛奇」可以使用其终极技能「复苏」对倒地队友进行复活，复苏过程中赛奇与目标队友均处于无敌状态。该技能冷却时间长，通常用于关键回合的翻盘。",
     batchLabel: "在游戏地图「裂隙」C点，英雄「赛奇」可以使用其终极技能「复苏」对倒地队友…",
     expanded: true,
@@ -489,6 +497,7 @@ const mockBatches: ExtractBatch[] = [
     extractor: CURRENT_USER,
     model: "deepseek-v3-2-251201",
     mode: "多段提取",
+    extractLang: "zh",
     sourceText: "在游戏地图断章城的 B 点，英雄绿松石可以使用技能能量充能进行布防。能量充能可在落地后形成一个能量场，对范围内敌人造成伤害…",
     batchLabel: "在游戏地图断章城的 B 点，英雄绿松石可以使用技能能量充能进行布防…",
     expanded: false,
@@ -537,6 +546,7 @@ const mockBatches: ExtractBatch[] = [
     extractor: "zhaoweilin(林兆伟)",
     model: "deepseek-v3-2-251201",
     mode: "文件解析",
+    extractLang: "zh",
     sourceText: "来源文件：无畏契约-维斯角色白皮书.pdf\n\n【第 1 章 / 1.2 技能机制】\n弧光玫瑰：维斯的基础技能，可部署在墙面或地面，部署后处于隐形状态，再次激活时可致盲所有注视该墙面的敌人，并提供闪光命中的提示音。该技能可回收并重新部署。\n\n【第 1 章 / 1.3 技能机制】\n剃刀藤蔓：可投掷的陷阱装置，落地后隐形，可手动激活，激活后从地面伸出藤蔓，对范围内移动的敌人造成持续伤害与减速效果，伴随较大声响；可通过墙面反弹进行布置。\n\n【第 2 章 / 2.1 地图配合】\n深海明珠地图 A 点防守时，建议在 A 主门、水下出口拐角等位置部署弧光玫瑰，当判断敌人即将进点时激活，配合队友反清。\n\n【第 2 章 / 2.2 战术建议】\n维斯擅长防守回合的预判布防，弧光玫瑰与剃刀藤蔓可形成控制链，有效封锁关键通道。",
     batchLabel: "[白皮书] 无畏契约-维斯角色白皮书.pdf",
     expanded: true,
@@ -575,6 +585,8 @@ export default function ExtractTab() {
   const [text, setText] = useState("");
   const [mode, setMode] = useState("single");
   const [model, setModel] = useState("deepseek-v3-2-251201");
+  /** 提取语种（默认中文，选择后影响冲突/重复检测、实体匹配、入库 i18n 字段） */
+  const [extractLang, setExtractLang] = useState<LangCode>("zh");
   const [loading, setLoading] = useState(false);
   const [batches, setBatches] = useState<ExtractBatch[]>(mockBatches);
   /** 左侧提取输入区是否已收起 */
@@ -658,7 +670,6 @@ export default function ExtractTab() {
   // 视图切换时清空选择
   React.useEffect(() => { clearSelection(); }, [view, scope]);
 
-
   const handleExtract = () => {
     if (!text.trim()) { MessagePlugin.warning("请输入文本内容"); return; }
     setLoading(true);
@@ -678,6 +689,7 @@ export default function ExtractTab() {
         batchLabel: label,
         model,
         mode: mode === "single" ? "单段提取" : "多段提取",
+        extractLang,
         expanded: true,
         archived: false,
         facts: mode === "single"
@@ -689,52 +701,130 @@ export default function ExtractTab() {
       };
       setBatches((prev) => [newBatch, ...prev]);
       setText("");
-      MessagePlugin.success(`提取完成（${newBatchId}），生成 ${newBatch.facts.length} 条事实，已进入右侧审核区`);
+      const langLabel = LANG_OPTIONS.find((language) => language.code === extractLang)?.label || extractLang;
+      MessagePlugin.success(`提取完成（${newBatchId}，${langLabel}），生成 ${newBatch.facts.length} 条事实，已进入右侧审核区`);
     }, 2000);
   };
 
-  /** 选择文件后触发 mock 解析 */
-  const handleFileSelect = (f: File) => {
+  /** 选择文件后解析：支持三 Sheet（实体/事件/知识资讯）定向处理 */
+  const handleFileSelect = async (f: File) => {
     setFile(f);
     setParseStatus("parsing");
     setParseError("");
     setSegments([]);
 
-    // mock：基于文件类型生成不同的解析结果
-    setTimeout(() => {
-      const ext = f.name.split(".").pop()?.toLowerCase() || "";
-      const isTable = ext === "xlsx" || ext === "csv";
-      const sizeMB = f.size / 1024 / 1024;
+    const ext = f.name.split(".").pop()?.toLowerCase() || "";
+    const isTable = ext === "xlsx" || ext === "csv";
+    const sizeMB = f.size / 1024 / 1024;
 
-      // 模拟解析失败：> 20MB 或加密 PDF（这里用文件名简单 mock）
-      if (sizeMB > 20) {
-        setParseStatus("error");
-        setParseError(`文件超过 20MB（${sizeMB.toFixed(2)}MB），请压缩或拆分后重试`);
+    if (isTable && sizeMB > 5) {
+      setParseStatus("error");
+      setParseError(`表格文件超过 5MB（${sizeMB.toFixed(2)}MB），请拆分后重试`);
+      return;
+    }
+    if (!isTable && sizeMB > 20) {
+      setParseStatus("error");
+      setParseError(`文件超过 20MB（${sizeMB.toFixed(2)}MB），请压缩或拆分后重试`);
+      return;
+    }
+    if (f.name.includes("encrypted")) {
+      setParseStatus("error");
+      setParseError("文件已加密，无法解析。请提供未加密版本");
+      return;
+    }
+
+    const inferSheetType = (sheetName: string): FileSegment["sheetType"] => {
+      const n = sheetName.toLowerCase();
+      if (sheetName.includes("实体") || n.includes("entity")) return "entity";
+      if (sheetName.includes("事件") || n.includes("event")) return "event";
+      if (sheetName.includes("知识") || n.includes("knowledge")) return "knowledge";
+      return undefined;
+    };
+
+    const firstNonEmpty = (row: Record<string, any>, keys: string[]) => {
+      for (const k of keys) {
+        const exact = row[k];
+        if (exact !== undefined && String(exact).trim()) return String(exact).trim();
+        const fuzzyKey = Object.keys(row).find((rk) => rk.includes(k));
+        if (fuzzyKey && String(row[fuzzyKey]).trim()) return String(row[fuzzyKey]).trim();
+      }
+      return "";
+    };
+
+    try {
+      if (ext === "xlsx") {
+        const XLSX = await import("xlsx");
+        const buf = await f.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+
+        const segs: FileSegment[] = [];
+        wb.SheetNames.forEach((sheetName) => {
+          const sheetType = inferSheetType(sheetName);
+          if (!sheetType) return;
+          const ws = wb.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: "" });
+
+          rows.forEach((row, idx) => {
+            const hasData = Object.values(row).some((v) => String(v ?? "").trim());
+            if (!hasData) return;
+
+            const primaryName = sheetType === "entity"
+              ? firstNonEmpty(row, ["实体名", "实体名称"])
+              : sheetType === "event"
+                ? firstNonEmpty(row, ["事件名", "事件名称"])
+                : firstNonEmpty(row, ["标题", "知识文本"]);
+
+            const text = Object.entries(row)
+              .filter(([, v]) => String(v ?? "").trim())
+              .map(([k, v]) => `${k}：${String(v).trim()}`)
+              .join("；");
+
+            segs.push({
+              id: `${sheetType}_${sheetName}_${idx + 1}`,
+              location: `${sheetName} 第 ${idx + 2} 行`,
+              text: text || `${primaryName || "未命名"}`,
+              selected: true,
+              sheetType,
+              rowData: row,
+            });
+          });
+        });
+
+        if (segs.length === 0) {
+          setParseStatus("error");
+          setParseError("未在【实体 / 事件 / 知识资讯】sheet 中识别到可用数据，请先按模板填写");
+          return;
+        }
+
+        setSegments(segs);
+        setParseStatus("parsed");
+        const cEntity = segs.filter((s) => s.sheetType === "entity").length;
+        const cEvent = segs.filter((s) => s.sheetType === "event").length;
+        const cKnow = segs.filter((s) => s.sheetType === "knowledge").length;
+        MessagePlugin.success(`解析完成：实体 ${cEntity} 条，事件 ${cEvent} 条，知识 ${cKnow} 条`);
         return;
       }
-      if (f.name.includes("encrypted")) {
-        setParseStatus("error");
-        setParseError("文件已加密，无法解析。请提供未加密版本");
-        return;
-      }
 
+      // csv 或文档：保留原有 mock 片段
       const segs: FileSegment[] = isTable
         ? [
-            { id: "seg_1", location: "第 2 行（行情说明）",  text: "在游戏地图深海明珠的 A 点，特工维斯可以使用基础技能弧光玫瑰进行防守…", selected: true },
-            { id: "seg_2", location: "第 3 行（行情说明）",  text: "在游戏地图日落之城的 B 点，特工维斯的剃刀藤蔓是一个可投掷的陷阱装置…", selected: true },
-            { id: "seg_3", location: "第 4 行（活动详情）",  text: "限时活动「深渊突袭季」开启，参与活动的玩家可获得专属皮肤暗影执行者…", selected: true },
+            { id: "seg_1", location: "第 2 行（表格）", text: "在游戏地图深海明珠的 A 点，特工维斯可以使用基础技能弧光玫瑰进行防守…", selected: true, sheetType: "knowledge" },
+            { id: "seg_2", location: "第 3 行（表格）", text: "在游戏地图日落之城的 B 点，特工维斯的剃刀藤蔓是一个可投掷的陷阱装置…", selected: true, sheetType: "knowledge" },
+            { id: "seg_3", location: "第 4 行（表格）", text: "限时活动「深渊突袭季」开启，参与活动的玩家可获得专属皮肤暗影执行者…", selected: true, sheetType: "knowledge" },
           ]
         : [
-            { id: "seg_1", location: "第 1 章 / 1.1 英雄概述",  text: "维斯是一名以战术控制见长的特工，擅长在防守回合通过预判敌方进攻路线进行布防…", selected: true },
-            { id: "seg_2", location: "第 1 章 / 1.2 技能机制", text: "弧光玫瑰：维斯的基础技能，可部署在墙面或地面，部署后处于隐形状态，再次激活时可致盲所有注视该墙面的敌人…", selected: true },
-            { id: "seg_3", location: "第 1 章 / 1.3 技能机制", text: "剃刀藤蔓：可投掷的陷阱装置，落地后隐形，可手动激活，激活后从地面伸出藤蔓，对范围内移动的敌人造成持续伤害与减速效果…", selected: true },
-            { id: "seg_4", location: "第 2 章 / 2.1 地图配合", text: "深海明珠地图 A 点防守时，建议在 A 主门、水下出口拐角等位置部署弧光玫瑰…", selected: true },
-            { id: "seg_5", location: "第 2 章 / 2.2 战术建议", text: "当通过声音或道具信息判断敌人即将进点时，激活玫瑰致盲，再协同队友从掩体后拉出反清击杀…", selected: true },
+            { id: "seg_1", location: "第 1 章 / 1.1 英雄概述", text: "维斯是一名以战术控制见长的特工，擅长在防守回合通过预判敌方进攻路线进行布防…", selected: true, sheetType: "knowledge" },
+            { id: "seg_2", location: "第 1 章 / 1.2 技能机制", text: "弧光玫瑰：维斯的基础技能，可部署在墙面或地面，部署后处于隐形状态，再次激活时可致盲所有注视该墙面的敌人…", selected: true, sheetType: "knowledge" },
+            { id: "seg_3", location: "第 1 章 / 1.3 技能机制", text: "剃刀藤蔓：可投掷的陷阱装置，落地后隐形，可手动激活，激活后从地面伸出藤蔓，对范围内移动的敌人造成持续伤害与减速效果…", selected: true, sheetType: "knowledge" },
           ];
+
       setSegments(segs);
       setParseStatus("parsed");
       MessagePlugin.success(`文件解析完成，识别出 ${segs.length} 个候选片段`);
-    }, 1500);
+    } catch (err: any) {
+      setParseStatus("error");
+      setParseError(`解析失败：${err?.message || "文件格式不支持"}`);
+    }
   };
 
   /** 文件提取：把选中的片段一次性生成一个批次 */
@@ -755,19 +845,35 @@ export default function ExtractTab() {
         : ext === "pdf" ? "白皮书"
         : ext === "docx" ? "白皮书"
         : "文件";
-      const facts: ExtractedFact[] = picked.map((s, i) => ({
-        factId: `f_${Date.now()}_${i + 1}`,
-        content: s.text,
-        entities: ["维斯"],
-        newEntities: [],
-        events: [],
-        newEvents: [],
-        startTime: "", endTime: "", timeDesc: "",
-        conflict: null,
-        duplicate: null,
-        status: "待审核",
-        logs: initLogs(CURRENT_USER, nowStr()),
-      }));
+      const getPrimaryName = (seg: FileSegment) => {
+        const row = seg.rowData || {};
+        if (seg.sheetType === "entity") return String(row["实体名"] || row["实体名称"] || "").trim();
+        if (seg.sheetType === "event") return String(row["事件名"] || row["事件名称"] || "").trim();
+        return String(row["标题 / 知识文本中可能缺失的上下文"] || row["标题"] || row["知识文本"] || "").trim();
+      };
+
+      const facts: ExtractedFact[] = picked.map((s, i) => {
+        const primary = getPrimaryName(s);
+        const from = s.sheetType || "knowledge";
+        return {
+          factId: `f_${Date.now()}_${i + 1}`,
+          content: s.text,
+          entities: from === "entity" && primary ? [primary] : [],
+          newEntities: [],
+          events: from === "event" && primary ? [primary] : [],
+          newEvents: [],
+          startTime: "", endTime: "", timeDesc: "",
+          conflict: null,
+          duplicate: null,
+          status: "待审核",
+          logs: initLogs(CURRENT_USER, nowStr()),
+          sourceType: from === "entity" ? "extract_entity_sheet" : from === "event" ? "extract_event_sheet" : "extract_knowledge_sheet",
+          source: file?.name || "",
+          sourceContent: `${s.location}`,
+          title: primary || undefined,
+          extra: JSON.stringify({ sheetType: from, location: s.location, rowData: s.rowData || {} }),
+        };
+      });
 
       const newBatch: ExtractBatch = {
         batchId: newBatchId,
@@ -777,6 +883,7 @@ export default function ExtractTab() {
         batchLabel: `[${fileType}] ${file?.name}`,
         model,
         mode: "文件解析",
+        extractLang,
         expanded: true,
         archived: false,
         facts,
@@ -786,7 +893,8 @@ export default function ExtractTab() {
       setFile(null);
       setSegments([]);
       setParseStatus("idle");
-      MessagePlugin.success(`提取完成（${newBatchId}），生成 ${facts.length} 条事实，已进入右侧审核区`);
+      const fLangLabel = LANG_OPTIONS.find((language) => language.code === extractLang)?.label || extractLang;
+      MessagePlugin.success(`提取完成（${newBatchId}，${fLangLabel}），生成 ${facts.length} 条事实，已进入右侧审核区`);
     }, 2000);
   };
 
@@ -1128,17 +1236,23 @@ export default function ExtractTab() {
                   </Radio>
                 </Radio.Group>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+
+              {/* 提取语种选择 */}
+              <div>
+                <div style={{ fontSize: 12, color: "var(--td-text-color-secondary)", marginBottom: 5 }}>
+                  提取语种
+                  <Tooltip content="选择源文本的语种。冲突/重复检测、实体/事件匹配均查询对应语种库，审核通过后写入该语种的 i18n 字段">
+                    <HelpCircleIcon style={{ color: "var(--td-text-color-placeholder)", fontSize: 14, cursor: "pointer", marginLeft: 4 }} />
+                  </Tooltip>
+                </div>
                 <Select
-                  filterable value={model} onChange={(v) => setModel(v as string)}
-                  options={[
-                    { label: "deepseek-v3-2-251201", value: "deepseek-v3-2-251201" },
-                    { label: "deepseek-v3-2-250101", value: "deepseek-v3-2-250101" },
-                    { label: "gpt-4o",               value: "gpt-4o" },
-                    { label: "claude-3.5-sonnet",    value: "claude-3.5-sonnet" },
-                  ]}
-                  style={{ flex: 1 }}
+                  value={extractLang}
+                  onChange={(v) => setExtractLang(v as LangCode)}
+                  options={LANG_OPTIONS.map((o) => ({ label: o.label, value: o.code }))}
+                  style={{ width: 200 }}
                 />
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <Button theme="primary" loading={loading} onClick={handleExtract} style={{ flexShrink: 0 }}>
                   提取事实
                 </Button>
@@ -1212,7 +1326,7 @@ export default function ExtractTab() {
         </div>
       </div>
 
-      {/* ── 右侧：审核区（flex:7，收起时占满）── */}
+      {/* ── 右侧：提取结果审核区 ── */}
       <div style={{ flex: 7, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {/* 顶部：标题 + 帮助 + 提取人筛选 */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexShrink: 0, flexWrap: "wrap", gap: 8 }}>
@@ -1376,6 +1490,7 @@ export default function ExtractTab() {
           )}
         </div>
       </div>
+
     </div>
   );
 }
@@ -1573,7 +1688,7 @@ function BatchCard({
             checked={batch.facts.length > 0 && batch.facts.every((f) => selectedFactIds.has(f.factId))}
             indeterminate={batch.facts.some((f) => selectedFactIds.has(f.factId)) && !batch.facts.every((f) => selectedFactIds.has(f.factId))}
             onChange={() => onToggleBatch(batch)}
-            onClick={(e) => e.stopPropagation()}
+            onClick={(ctx) => ctx?.e?.stopPropagation?.()}
             style={{ flexShrink: 0 }}
           />
         )}
@@ -1600,7 +1715,7 @@ function BatchCard({
             <span style={{ fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{batch.batchLabel}</span>
           </div>
           <div style={{ fontSize: 11, color: "var(--td-text-color-placeholder)" }}>
-            {batch.extractedAt} · 提取人：<span style={{ color: batch.extractor === CURRENT_USER ? "var(--td-brand-color)" : "var(--td-text-color-secondary)" }}>{batch.extractor}{batch.extractor === CURRENT_USER ? "（我）" : ""}</span> · {batch.model} · {batch.mode} · 共 {batch.facts.length} 条
+            {batch.extractedAt} · 提取人：<span style={{ color: batch.extractor === CURRENT_USER ? "var(--td-brand-color)" : "var(--td-text-color-secondary)" }}>{batch.extractor}{batch.extractor === CURRENT_USER ? "（我）" : ""}</span> · {batch.model} · {batch.mode} · <Tag theme={batch.extractLang === "zh" ? "default" : "primary"} variant="light" size="small">{LANG_OPTIONS.find((l) => l.code === batch.extractLang)?.label || batch.extractLang}</Tag> · 共 {batch.facts.length} 条
           </div>
           {/* 导出记录 */}
           {batch.archiveReason === "exported" && batch.exportedAt && (
@@ -1741,6 +1856,7 @@ function BatchCard({
                 onRevoke={() => updateFact(fact.factId, { status: "待审核" }, mkLog("撤回", `从「${fact.status}」撤回到「待审核」`))}
                 onDelete={() => deleteFact(fact.factId)}
                 onUpdate={(patch, log) => updateFact(fact.factId, patch, log)}
+                batchExtractLang={batch.extractLang}
               />
             ))}
             {/* 已归档批次：已拒绝隐藏开关（仅当存在已拒绝条目时显示） */}
@@ -1769,7 +1885,7 @@ function BatchCard({
 // ─── 单条事实行 ───────────────────────────────────────────────────────────────
 function FactRow({
   fact, index, isLast, readOnly, selected, onToggleSelect,
-  onApprove, onReject, onRevoke, onDelete, onUpdate,
+  onApprove, onReject, onRevoke, onDelete, onUpdate, batchExtractLang,
 }: {
   fact: ExtractedFact;
   index: number;
@@ -1782,6 +1898,7 @@ function FactRow({
   onRevoke: () => void;
   onDelete: () => void;
   onUpdate: (patch: Partial<ExtractedFact>, log?: BufferLog) => void;
+  batchExtractLang?: LangCode;
 }) {
   const [editVisible,     setEditVisible]     = useState(false);
   const [conflictVisible, setConflictVisible] = useState(false);
@@ -1819,7 +1936,7 @@ function FactRow({
             </div>
             {/* 冲突 / 重复 Tag */}
             {(fact.conflict || fact.duplicate) && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
                 {fact.conflict && (
                   <Tooltip content={<span style={{ fontSize: 12, lineHeight: 1.6 }}>{fact.conflict.reason}</span>} placement="top" overlayStyle={{ maxWidth: 360 }}>
                     <Tag
@@ -1847,6 +1964,9 @@ function FactRow({
                       重复事实：[{fact.duplicate.factId}]
                     </Tag>
                   </Tooltip>
+                )}
+                {(batchExtractLang && batchExtractLang !== "zh") && (
+                  <Tag theme="primary" variant="light" size="small">{LANG_OPTIONS.find((l) => l.code === batchExtractLang)?.label}库检测</Tag>
                 )}
               </div>
             )}
@@ -2078,6 +2198,7 @@ function FactRow({
       <FactEditDrawer
         visible={editVisible}
         fact={fact}
+        batchExtractLang={batchExtractLang}
         onClose={() => setEditVisible(false)}
         onSave={(patch, summary) => {
           onUpdate(patch, mkLog("编辑", summary || "编辑事实内容"));
@@ -2119,10 +2240,12 @@ function FactRow({
 
 // ─── 缓冲池事实编辑抽屉（富信息版）─────────────────────────────────────────────
 function FactEditDrawer({
-  visible, fact, onClose, onSave,
+  visible, fact, batchExtractLang, onClose, onSave,
 }: {
   visible: boolean;
   fact: ExtractedFact;
+  /** 所属批次的提取语种，用于冲突/重复检测语种标注 */
+  batchExtractLang?: LangCode;
   onClose: () => void;
   onSave: (patch: Partial<ExtractedFact>, summary?: string) => void;
 }) {
@@ -2317,12 +2440,15 @@ function FactEditDrawer({
               />
             </FormItem>
 
-            {/* 冲突 / 重复 / 已解除 提示（只在 zh 模式下展示，因为校验基于中文主字段）*/}
-            {lang === "zh" && liveCheck.conflict && (
+            {/* 冲突 / 重复 / 已解除 提示（在提取语种对应的语言 Tab 下展示）*/}
+            {lang === (batchExtractLang || "zh") && liveCheck.conflict && (
               <div style={{ padding: "10px 12px", background: "rgba(227,77,89,0.06)", border: "1px solid rgba(227,77,89,0.2)", borderRadius: 6, marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: "#e34d59" }}>⚠ 冲突事实</span>
                   <Tag theme="danger" variant="light" size="small">[{liveCheck.conflict.factId}]</Tag>
+                  {(batchExtractLang && batchExtractLang !== "zh") && (
+                    <Tag theme="warning" variant="light" size="small">{LANG_OPTIONS.find((l) => l.code === batchExtractLang)?.label}库</Tag>
+                  )}
                   <span style={{ flex: 1 }} />
                   <Button variant="text" size="small" theme="primary" onClick={() => setCompareDlg({ mode: "conflict" })}>查看对比</Button>
                 </div>
@@ -2332,12 +2458,15 @@ function FactEditDrawer({
                 </div>
               </div>
             )}
-            {lang === "zh" && liveCheck.duplicate && (
+            {lang === (batchExtractLang || "zh") && liveCheck.duplicate && (
               <div style={{ padding: "10px 12px", background: "rgba(255,184,0,0.06)", border: "1px solid rgba(255,184,0,0.35)", borderRadius: 6, marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: "var(--td-warning-color)" }}>≈ 重复事实</span>
                   <Tag theme="warning" variant="light" size="small">[{liveCheck.duplicate.factId}]</Tag>
                   <Tag theme="warning" variant="light" size="small">相似度 {Math.round(liveCheck.duplicate.similarity * 100)}%</Tag>
+                  {(batchExtractLang && batchExtractLang !== "zh") && (
+                    <Tag theme="primary" variant="light" size="small">{LANG_OPTIONS.find((l) => l.code === batchExtractLang)?.label}库</Tag>
+                  )}
                   <span style={{ flex: 1 }} />
                   <Button variant="text" size="small" theme="primary" onClick={() => setCompareDlg({ mode: "duplicate" })}>查看对比</Button>
                 </div>
@@ -2346,12 +2475,12 @@ function FactEditDrawer({
                 </div>
               </div>
             )}
-            {lang === "zh" && fact.conflict && !liveCheck.conflict && (
+            {lang === (batchExtractLang || "zh") && fact.conflict && !liveCheck.conflict && (
               <div style={{ padding: "8px 12px", background: "rgba(0,168,112,0.06)", border: "1px solid rgba(0,168,112,0.3)", borderRadius: 6, marginBottom: 10, fontSize: 12, color: "var(--td-success-color)" }}>
                 ✓ 编辑后已不再与 [{fact.conflict.factId}] 冲突，保存即生效
               </div>
             )}
-            {lang === "zh" && fact.duplicate && !liveCheck.duplicate && (
+            {lang === (batchExtractLang || "zh") && fact.duplicate && !liveCheck.duplicate && (
               <div style={{ padding: "8px 12px", background: "rgba(0,168,112,0.06)", border: "1px solid rgba(0,168,112,0.3)", borderRadius: 6, marginBottom: 10, fontSize: 12, color: "var(--td-success-color)" }}>
                 ✓ 编辑后已不再与 [{fact.duplicate.factId}] 重复，保存即生效
               </div>
@@ -2908,6 +3037,41 @@ function FileImportPanel({
   onReset: () => void;
 }) {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [templateVersion, setTemplateVersion] = React.useState<number>(Date.now());
+
+  const templateHref = `/fact_extract_template.xlsx?v=${templateVersion}`;
+  const refreshTemplate = () => {
+    setTemplateVersion(Date.now());
+    MessagePlugin.success("模板已刷新：当前为三 Sheet（实体/事件/知识资讯）版本");
+  };
+
+  const downloadTemplateWithGuide = () => {
+    const close = DialogPlugin.confirm({
+      header: "导入模板说明",
+      confirmBtn: { content: "我知道了，下载模板", theme: "primary" },
+      cancelBtn: { content: "取消", variant: "outline" },
+      body: (
+        <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+          <div>模板包含 <strong>3 个 Sheet</strong>，系统会按填写的 Sheet 定向处理：</div>
+          <div style={{ marginTop: 6 }}>1）<strong>实体</strong>：生成实体类候选，优先匹配/补充实体信息</div>
+          <div>2）<strong>事件</strong>：生成事件类候选，优先匹配/补充事件信息</div>
+          <div>3）<strong>知识资讯</strong>：生成通用事实候选，进入审核工作台</div>
+          <div style={{ marginTop: 6, color: "var(--td-text-color-secondary)" }}>
+            仅识别上述三类 Sheet；其它 Sheet 会自动忽略。
+          </div>
+        </div>
+      ) as any,
+      onConfirm: () => {
+        const a = document.createElement("a");
+        a.href = templateHref;
+        a.download = "事实提取导入模板.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        close?.hide?.();
+      },
+    });
+  };
 
   const fileTypeIcon = () => {
     const ext = file?.name.split(".").pop()?.toLowerCase() || "";
@@ -2937,6 +3101,16 @@ function FileImportPanel({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 12, color: "var(--td-text-color-secondary)" }}>
+          先下载三 Sheet 模板（实体 / 事件 / 知识资讯），系统将按所填 Sheet 定向处理
+        </div>
+        <Space size={8}>
+          <Button variant="outline" size="small" onClick={refreshTemplate}>刷新模板结构</Button>
+          <Button theme="primary" variant="outline" size="small" onClick={downloadTemplateWithGuide}>下载模板</Button>
+        </Space>
+      </div>
+
       {/* 上传区 */}
       {!file && (
         <div
@@ -2959,7 +3133,7 @@ function FileImportPanel({
           }}
         >
           <AttachIcon style={{ fontSize: 32, color: "var(--td-text-color-placeholder)", marginBottom: 8 }} />
-          <div style={{ fontSize: 14, color: "var(--td-text-color-primary)", marginBottom: 4 }}>
+          <div style={{ fontSize: 13, color: "var(--td-text-color-primary)", marginBottom: 4 }}>
             点击或拖拽文件到此处
           </div>
           <div style={{ fontSize: 12, color: "var(--td-text-color-secondary)" }}>

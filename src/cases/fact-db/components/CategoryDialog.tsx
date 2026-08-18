@@ -1,78 +1,95 @@
-import React, { useState, useEffect } from "react";
-import { Dialog, Form, Input, Textarea, Button, Space, MessagePlugin } from "tdesign-react";
+import React, { useLayoutEffect, useState } from "react";
+import { Dialog, Form, Input, Textarea, Select, MessagePlugin } from "tdesign-react";
+import type { CategoryNode } from "../types";
+import EditorField from "./EditorField";
 
-const { FormItem } = Form;
-
-interface CategoryDialogProps {
+interface Props {
   visible: boolean;
-  mode?: "create" | "edit";
+  mode: "create" | "edit";
+  node?: CategoryNode | null;
   parentName?: string;
   editName?: string;
   editDesc?: string;
   onClose: () => void;
 }
 
-export default function CategoryDialog({ visible, mode = "create", parentName, editName, editDesc, onClose }: CategoryDialogProps) {
-  const isEdit = mode === "edit";
-  const isChild = !isEdit && !!parentName && parentName !== "根节点";
-  const [parent, setParent] = useState("根节点");
-  const [name, setName] = useState("");
-  const [desc, setDesc] = useState("");
-  const [preId, setPreId] = useState("17");
+type FormModel = {
+  name: string;
+  parent: string;
+  description: string;
+  sort: string;
+};
 
-  useEffect(() => {
-    if (visible) {
-      if (isEdit) {
-        setParent("保持不变");
-        setName(editName || "");
-        setDesc(editDesc || "");
-        setPreId("不适用");
-      } else {
-        setParent(parentName || "根节点");
-        setName("");
-        setDesc("");
-        setPreId(isChild ? "2003" : "17");
-      }
+const emptyModel: FormModel = {
+  name: "",
+  parent: "",
+  description: "",
+  sort: "100",
+};
+
+export default function CategoryDialog({ visible, mode, node, parentName, editName, editDesc, onClose }: Props) {
+  const [form, setForm] = useState<FormModel>(emptyModel);
+
+  useLayoutEffect(() => {
+    if (!visible) return;
+    if (mode === "edit") {
+      setForm({
+        name: editName || node?.name || "",
+        parent: parentName || "",
+        description: editDesc || "",
+        sort: "100",
+      });
+      return;
     }
-  }, [visible, mode, parentName, editName, editDesc]);
+    setForm({ ...emptyModel, parent: parentName || "" });
+  }, [visible, mode, node, parentName, editName, editDesc]);
 
-  const handleSave = () => {
-    if (!name.trim()) {
+  const handleSubmit = () => {
+    if (!form.name.trim()) {
       MessagePlugin.warning("请输入分类名称");
       return;
     }
-    MessagePlugin.success(isEdit ? "保存成功" : "创建成功");
+    MessagePlugin.success(mode === "create" ? "创建成功" : "保存成功");
     onClose();
   };
-
-  const title = isEdit ? "编辑分类" : isChild ? "新建子分类" : "新建一级分类";
 
   return (
     <Dialog
       visible={visible}
-      header={title}
-      width={520}
+      header={mode === "create" ? "新增分类" : "编辑分类"}
+      width={900}
+      top="4vh"
+      placement="center"
+      className="factdb-edit-dialog"
+      confirmBtn={{ content: mode === "create" ? "创建" : "保存", theme: "primary" }}
+      cancelBtn={{ content: "取消", variant: "outline" }}
       onClose={onClose}
-      footer={
-        <Space>
-          <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button theme="primary" onClick={handleSave}>保存</Button>
-        </Space>
-      }
+      onConfirm={handleSubmit}
     >
-      <Form labelAlign="top" labelWidth={0}>
-        <FormItem label="父分类">
-          <Input value={parent} disabled />
-        </FormItem>
-        <FormItem label="分类名称" requiredMark>
-          <Input value={name} onChange={(v) => setName(v)} placeholder="请输入分类名称" />
-        </FormItem>
-        <FormItem label="说明">
-          <Textarea value={desc} onChange={(v) => setDesc(v)} placeholder="可选" autosize={{ minRows: 4 }} />
-        </FormItem>
-        <FormItem label="预分配编号（仅新建时）">
-          <Input value={preId} onChange={(v) => setPreId(v)} disabled={isEdit} />
-        </FormItem>
+      <Form layout="vertical" colon className="factdb-editor-form factdb-category-editor factdb-form-grid-2">
+        <div className="factdb-form-col">
+          <EditorField label="分类名称" requiredMark>
+            <Input value={form.name} onChange={(v) => setForm((s) => ({ ...s, name: v }))} />
+          </EditorField>
+
+          <EditorField label="父级分类">
+            <Select
+              value={form.parent}
+              onChange={(v) => setForm((s) => ({ ...s, parent: String(v || "") }))}
+              options={[{ label: "无（一级分类）", value: "" }]}
+            />
+          </EditorField>
+
+          <EditorField label="排序值">
+            <Input type="number" value={form.sort} onChange={(v) => setForm((s) => ({ ...s, sort: v }))} style={{ width: 180 }} />
+          </EditorField>
+        </div>
+
+        <div className="factdb-form-col">
+          <EditorField label="分类描述">
+            <Textarea value={form.description} onChange={(v) => setForm((s) => ({ ...s, description: v }))} autosize={{ minRows: 6, maxRows: 12 }} />
+          </EditorField>
+        </div>
       </Form>
     </Dialog>
   );

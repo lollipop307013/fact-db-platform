@@ -1,9 +1,10 @@
 import type { Entity, GameEvent, Fact, CategoryNode, ExtractBufferItem, OperationLog } from "./types";
 
 export const gameOptions = [
+  { label: "失控进化 (代号RM国内)", value: "valorant" },
+  { label: "无畏契约：源能行动", value: "cfm" },
   { label: "PUBG Mobile", value: "pubg" },
   { label: "FC Mobile", value: "fc" },
-  { label: "无畏契约：源能行动", value: "valorant" },
   { label: "饥荒", value: "dst" },
 ];
 
@@ -27,17 +28,13 @@ export const tagOptions = [
   { label: "系统模块", value: "系统模块" },
 ];
 
-export const auditOptions = [
-  { label: "所有状态", value: "all" },
-  { label: "待审核", value: "待审核" },
-  { label: "已审核", value: "已审核" },
+export const onlineStatusOptions = [
+  { label: "所有线上状态", value: "all" },
   { label: "已上线", value: "已上线" },
   { label: "已下线", value: "已下线" },
 ];
 
-export const STATUS_CONFIG: Record<string, { label: string; theme: "warning" | "primary" | "success" | "default" }> = {
-  "待审核": { label: "待审核", theme: "warning" },
-  "已审核": { label: "已审核", theme: "primary" },
+export const ONLINE_STATUS_CONFIG: Record<string, { label: string; theme: "success" | "default" }> = {
   "已上线": { label: "已上线", theme: "success" },
   "已下线": { label: "已下线", theme: "default" },
 };
@@ -50,88 +47,135 @@ export const uploadOptions = [
 ];
 
 export const mockEntities: Entity[] = [
-  { id: 12087, title: "雷蛇榴弹", tag: "粘性榴弹", status: "已审核", source: "-", description: "极道特工中具有的能力，向一扇可以将远处的位置连同一簇扎形的黏附炸弹一起投出的连锁爆炸。", alias: "粘性炸弹, 蛇榴弹",
+  { id: 12087, title: "雷蛇榴弹", tag: "粘性榴弹", status: "已上线", source: "-", description: "极道特工中具有的能力，向一扇可以将远处的位置连同一簇扎形的黏附炸弹一起投出的连锁爆炸。", alias: "粘性炸弹, 蛇榴弹",
     logs: [
       { id: 1, operator: "dorrawang", time: "2026-01-10 09:00:00", action: "创建-导入" as const, detail: "白皮书批量导入" },
       { id: 2, operator: "zhangsan",  time: "2026-02-05 14:22:10", action: "编辑"     as const, detail: "补充别名：粘性炸弹, 蛇榴弹" },
       { id: 3, operator: "dorrawang", time: "2026-03-01 10:15:33", action: "状态变更" as const, detail: "待审核 → 已审核" },
     ],
   },
-  { id: 12081, title: "精准预测", tag: "潜袭爬虫", status: "已审核", source: "-", description: "提前在特殊的环境及对手的行动路径上部署好技能，计算好对方的移动轨迹",
+  { id: 12081, title: "精准预测", tag: "潜袭爬虫", status: "已上线", source: "-", description: "提前在特殊的环境及对手的行动路径上部署好技能，计算好对方的移动轨迹",
     logs: [
       { id: 1, operator: "dorrawang", time: "2026-01-10 09:00:00", action: "创建-导入" as const, detail: "白皮书批量导入" },
       { id: 2, operator: "dorrawang", time: "2026-03-01 10:15:33", action: "状态变更" as const, detail: "待审核 → 已审核" },
     ],
   },
-  { id: 12062, title: "地震炮", tag: "战术投送", status: "已审核", source: "-", description: "裂动技术中两种武器，可以穿墙，可以使用它在目标上造成震荡效果来击败对手", alias: "震荡炮, 穿墙炮",
+  { id: 12062, title: "地震炮", tag: "战术投送", status: "已上线", source: "-", description: "裂动技术中两种武器，可以穿墙，可以使用它在目标上造成震荡效果来击败对手", alias: "震荡炮, 穿墙炮",
     logs: [
       { id: 1, operator: "lisi",      time: "2026-01-12 11:30:00", action: "创建-导入" as const, detail: "白皮书批量导入" },
       { id: 2, operator: "lisi",      time: "2026-01-12 15:40:22", action: "编辑"     as const, detail: "修正描述，补充穿墙特性说明" },
       { id: 3, operator: "dorrawang", time: "2026-03-01 10:16:00", action: "状态变更" as const, detail: "待审核 → 已审核" },
     ],
   },
-  { id: 11961, title: "激流勇进", tag: "机制", status: "已审核", source: "-", description: "遇到对方的火力，一种闪避的动作，用于提高命中率和可射击的防御能力",
+  { id: 11961, title: "激流勇进", tag: "机制", status: "已上线", source: "-", description: "遇到对方的火力，一种闪避的动作，用于提高命中率和可射击的防御能力",
     logs: [
       { id: 1, operator: "dorrawang", time: "2026-01-10 09:00:00", action: "创建-导入" as const, detail: "白皮书批量导入" },
       { id: 2, operator: "dorrawang", time: "2026-03-01 10:15:33", action: "状态变更" as const, detail: "待审核 → 已审核" },
     ],
   },
-  { id: 11938, title: "白银1-4",   tag: "段位", status: "已审核", source: "-", description: "白银1-4",
+  { id: 11938, title: "白银1-4",   tag: "段位", status: "已上线", source: "-", description: "白银1-4",
     logs: [{ id: 1, operator: "dorrawang", time: "2026-01-10 09:00:00", action: "创建-导入" as const, detail: "白皮书批量导入" },
            { id: 2, operator: "dorrawang", time: "2026-03-01 10:15:33", action: "状态变更" as const, detail: "待审核 → 已审核" }] },
-  { id: 11937, title: "青铜1-3",   tag: "段位", status: "已审核", source: "-", description: "青铜1-3",
+  { id: 11937, title: "青铜1-3",   tag: "段位", status: "已上线", source: "-", description: "青铜1-3",
     logs: [{ id: 1, operator: "dorrawang", time: "2026-01-10 09:00:00", action: "创建-导入" as const, detail: "白皮书批量导入" },
            { id: 2, operator: "dorrawang", time: "2026-03-01 10:15:33", action: "状态变更" as const, detail: "待审核 → 已审核" }] },
-  { id: 11936, title: "黑铁1-3",   tag: "段位", status: "已审核", source: "-", description: "黑铁1-3",
+  { id: 11936, title: "黑铁1-3",   tag: "段位", status: "已上线", source: "-", description: "黑铁1-3",
     logs: [{ id: 1, operator: "dorrawang", time: "2026-01-10 09:00:00", action: "创建-导入" as const, detail: "白皮书批量导入" },
            { id: 2, operator: "dorrawang", time: "2026-03-01 10:15:33", action: "状态变更" as const, detail: "待审核 → 已审核" }] },
-  { id: 11928, title: "大厅", tag: "系统模块", status: "已审核", source: "-", description: "游戏内的主要功能区域", alias: "游戏大厅, 主界面, Lobby",
+  { id: 11928, title: "大厅", tag: "系统模块", status: "已上线", source: "-", description: "游戏内的主要功能区域", alias: "游戏大厅, 主界面, Lobby",
     logs: [{ id: 1, operator: "dorrawang", time: "2026-01-10 09:00:00", action: "创建-导入" as const, detail: "白皮书批量导入" },
            { id: 2, operator: "dorrawang", time: "2026-03-01 10:15:33", action: "状态变更" as const, detail: "待审核 → 已审核" }] },
-  { id: 11917, title: "事件公告", tag: "事件类型", status: "待审核", source: "-", description: "有创公告记时间内事件即将开始等相关公告活动即发布的通知消息",
+  { id: 11917, title: "事件公告", tag: "事件类型", status: "已上线", source: "-", description: "有创公告记时间内事件即将开始等相关公告活动即发布的通知消息",
     logs: [{ id: 1, operator: "zhangsan", time: "2026-04-20 16:00:00", action: "创建-手动" as const, detail: "事实提取后手动新增实体" }] },
-  { id: 11901, title: "限时活动", tag: "事件类型", status: "已审核", source: "-", description: "游戏中会不定期推出各种限时活动", alias: "限时, 限时模式, Limited Time",
+  { id: 11901, title: "限时活动", tag: "事件类型", status: "已上线", source: "-", description: "游戏中会不定期推出各种限时活动", alias: "限时, 限时模式, Limited Time",
     logs: [{ id: 1, operator: "dorrawang", time: "2026-01-10 09:00:00", action: "创建-导入" as const, detail: "白皮书批量导入" },
            { id: 2, operator: "dorrawang", time: "2026-03-01 10:15:33", action: "状态变更" as const, detail: "待审核 → 已审核" }] },
 ];
 
 export const mockEvents: GameEvent[] = [
-  { id: 10926, name: "九九大吉", description: "满级大吉", eventType: "活动", status: "已审核", startTime: "2026-01-20 00:00:00", endTime: "2026-04-09 23:59:59", source: "-", remark: "-", alias: "99大吉, 九九大吉活动, 新春活动",
+  { id: 11002, name: "S34赛季公测", description: "新赛季公测启动", eventType: "版本", status: "已上线", timeType: "span", startTime: "2026-09-01 10:00:00", endTime: "2026-10-15 23:59:59", source: "-", remark: "-", alias: "S34公测",
+    logs: [
+      { id: 1, operator: "dorrawang", time: "2026-08-01 10:00:00", action: "创建-手动" as const, detail: "版本更新手动录入" },
+      { id: 2, operator: "dorrawang", time: "2026-08-01 10:20:00", action: "状态变更" as const, detail: "待审核 → 已审核" },
+    ],
+  },
+  { id: 10926, name: "九九大吉", description: "满级大吉", eventType: "活动", status: "已上线", timeType: "span", startTime: "2026-01-20 00:00:00", endTime: "2026-04-09 23:59:59", source: "-", remark: "-", alias: "99大吉, 九九大吉活动, 新春活动",
     logs: [
       { id: 1, operator: "dorrawang", time: "2026-01-18 10:00:00", action: "创建-手动" as const, detail: "活动上线前手动录入" },
       { id: 2, operator: "dorrawang", time: "2026-01-18 10:30:00", action: "状态变更" as const, detail: "待审核 → 已审核" },
       { id: 3, operator: "zhangsan",  time: "2026-01-20 00:05:00", action: "编辑"     as const, detail: "补充别名：99大吉, 九九大吉活动, 新春活动" },
     ],
   },
-  { id: 10889, name: "联赛冠军赛", description: "联赛冠军赛", eventType: "比赛", status: "已审核", startTime: "2025-12-08 10:00:00", endTime: "2026-04-09 18:00:00", source: "-", remark: "-", alias: "冠军联赛, 联赛赛程",
+  { id: 10889, name: "联赛冠军赛", description: "联赛冠军赛", eventType: "比赛", status: "已上线", timeType: "span", startTime: "2025-12-08 10:00:00", endTime: "2026-04-09 18:00:00", source: "-", remark: "-", alias: "冠军联赛, 联赛赛程",
     logs: [
       { id: 1, operator: "lisi",      time: "2025-12-05 09:00:00", action: "创建-手动" as const, detail: "赛事手动录入" },
       { id: 2, operator: "dorrawang", time: "2025-12-06 14:00:00", action: "状态变更" as const, detail: "待审核 → 已审核" },
     ],
   },
-  { id: 10888, name: "千秋高思", description: "-", eventType: "活动", status: "已审核", startTime: "2025-12-08 00:00:00", endTime: "-", source: "-", remark: "-",
+  { id: 10888, name: "千秋高思", description: "-", eventType: "活动", status: "已上线", timeType: "span", startTime: "2025-12-08 00:00:00", endTime: "-", source: "-", remark: "-",
     logs: [
       { id: 1, operator: "dorrawang", time: "2025-12-07 11:20:00", action: "创建-手动" as const, detail: "活动手动录入" },
       { id: 2, operator: "dorrawang", time: "2025-12-07 11:45:00", action: "状态变更" as const, detail: "待审核 → 已审核" },
     ],
   },
-  { id: 10700, name: "落马石头礼", description: "宫崎骏系列", eventType: "活动", status: "已审核", startTime: "2025-11-19 10:00:00", endTime: "2025-12-04 23:59:59", source: "-", remark: "-",
+  { id: 10700, name: "落马石头礼", description: "宫崎骏系列", eventType: "活动", status: "已上线", timeType: "span", startTime: "2025-11-19 10:00:00", endTime: "2025-12-04 23:59:59", source: "-", remark: "-",
     logs: [
       { id: 1, operator: "zhangsan",  time: "2025-11-18 09:30:00", action: "创建-手动" as const, detail: "活动手动录入" },
       { id: 2, operator: "dorrawang", time: "2025-11-18 15:00:00", action: "状态变更" as const, detail: "待审核 → 已审核" },
     ],
   },
-  { id: 10508, name: "爆裂大爆炸队列", description: "-", eventType: "版本", status: "已审核", startTime: "2025-11-07 02:00:00", endTime: "2025-11-28 06:00:00", source: "-", remark: "-",
+  { id: 10508, name: "爆裂大爆炸队列", description: "-", eventType: "版本", status: "已上线", timeType: "span", startTime: "2025-11-07 02:00:00", endTime: "2025-11-28 06:00:00", source: "-", remark: "-",
     logs: [
       { id: 1, operator: "dorrawang", time: "2025-11-06 18:00:00", action: "创建-手动" as const, detail: "版本更新手动录入" },
       { id: 2, operator: "dorrawang", time: "2025-11-06 18:30:00", action: "状态变更" as const, detail: "待审核 → 已审核" },
     ],
   },
-  { id: 10143, name: "无畏契约正式服上线", description: "无畏契约手游开服", eventType: "版本", status: "已审核", startTime: "2025-08-19 10:00:00", endTime: "2025-09-19 23:59:59", source: "-", remark: "-", alias: "CFM上线, 手游开服, 源能行动上线",
+  { id: 10143, name: "无畏契约正式服上线", description: "无畏契约手游开服", eventType: "版本", status: "已上线", timeType: "span", startTime: "2025-08-19 10:00:00", endTime: "2025-09-19 23:59:59", source: "-", remark: "-", alias: "CFM上线, 手游开服, 源能行动上线",
     logs: [
       { id: 1, operator: "dorrawang", time: "2025-08-18 12:00:00", action: "创建-手动" as const, detail: "重大版本事件手动录入" },
       { id: 2, operator: "lisi",      time: "2025-08-18 14:00:00", action: "编辑"     as const, detail: "补充别名：CFM上线, 手游开服, 源能行动上线" },
       { id: 3, operator: "dorrawang", time: "2025-08-18 16:00:00", action: "状态变更" as const, detail: "待审核 → 已审核" },
+    ],
+  },
+  // 固定周期（按星期重复）
+  { id: 20001, name: "周常竞技赛", description: "每周固定开放的排位竞技赛", eventType: "比赛", status: "已上线", timeType: "recurring", startTime: "-", endTime: "-", recurringWeekdays: [3, 5], recurringTimeRange: ["19:00", "21:00"], recurringDurationDays: 1, timeDesc: "每周三、周五 19:00-21:00", source: "-", remark: "-",
+    logs: [
+      { id: 1, operator: "dorrawang", time: "2025-09-01 10:00:00", action: "创建-手动" as const, detail: "固定周期赛事手动录入" },
+      { id: 2, operator: "dorrawang", time: "2025-09-01 10:20:00", action: "状态变更" as const, detail: "待审核 → 已审核" },
+    ],
+  },
+  { id: 20002, name: "每日签到有礼", description: "每天登录即可领取签到奖励", eventType: "活动", status: "已上线", timeType: "recurring", startTime: "-", endTime: "-", recurringWeekdays: [1, 2, 3, 4, 5, 6, 7], recurringTimeRange: ["00:00", "23:59"], timeDesc: "每天 00:00-23:59", source: "-", remark: "-", alias: "每日签到, 签到奖励",
+    logs: [
+      { id: 1, operator: "lisi", time: "2025-06-10 09:00:00", action: "创建-手动" as const, detail: "常驻活动手动录入" },
+      { id: 2, operator: "dorrawang", time: "2025-06-10 09:30:00", action: "状态变更" as const, detail: "待审核 → 已审核" },
+    ],
+  },
+  { id: 20003, name: "周末双倍经验", description: "周末登录游戏经验获取翻倍", eventType: "活动", status: "已上线", timeType: "recurring", startTime: "-", endTime: "-", recurringWeekdays: [6, 7], recurringTimeRange: ["00:00", "23:59"], recurringDurationDays: 2, timeDesc: "每周六开始，连续两天全天", source: "-", remark: "-",
+    logs: [
+      { id: 1, operator: "zhangsan", time: "2026-04-02 15:00:00", action: "创建-手动" as const, detail: "常驻活动手动录入，待审核" },
+    ],
+  },
+  // 时间未定
+  { id: 21001, name: "赛季冲刺周末战", description: "赛季末冲刺活动，活动期内每周五晚开启并持续两天", eventType: "活动", status: "已上线", timeType: "hybrid", startTime: "2026-08-01 00:00:00", endTime: "2026-10-31 23:59:59", recurringWeekdays: [5], recurringTimeRange: ["19:00", "23:00"], recurringDurationDays: 2, timeDesc: "2026/08-10 有限期，每周五晚开启并跨周末", source: "-", remark: "-", alias: "冲刺周末战, 周末冲刺",
+    logs: [
+      { id: 1, operator: "dorrawang", time: "2026-07-20 10:00:00", action: "创建-手动" as const, detail: "有限期周期活动手动录入" },
+      { id: 2, operator: "dorrawang", time: "2026-07-20 10:20:00", action: "状态变更" as const, detail: "待审核 → 已审核" },
+    ],
+  },
+  { id: 30001, name: "新英雄·夜莺上线", description: "新英雄夜莺预告，具体上线时间待定", eventType: "版本", status: "已上线", timeType: "undetermined", startTime: "-", endTime: "-", timeDesc: "预计S34赛季上线，具体时间待官方公布", source: "-", remark: "-", alias: "夜莺, 新英雄预告",
+    logs: [
+      { id: 1, operator: "lisi", time: "2026-04-15 11:00:00", action: "创建-手动" as const, detail: "根据预告片手动录入，时间未定" },
+    ],
+  },
+  { id: 30002, name: "跨界联动活动", description: "与知名动漫IP的联动活动，细节洽谈中", eventType: "活动", status: "已上线", timeType: "undetermined", startTime: "-", endTime: "-", timeDesc: "合作细节未最终确定，暂无排期", source: "-", remark: "-",
+    logs: [
+      { id: 1, operator: "dorrawang", time: "2026-04-20 09:40:00", action: "创建-手动" as const, detail: "根据市场部消息手动录入" },
+    ],
+  },
+  { id: 30003, name: "下一届全国大赛", description: "年度全国大赛，赛程尚未公布", eventType: "比赛", status: "已上线", timeType: "undetermined", startTime: "-", endTime: "-", timeDesc: "上一届已结束，新一届赛程待官方公布", source: "-", remark: "-",
+    logs: [
+      { id: 1, operator: "zhangsan", time: "2026-03-10 14:00:00", action: "创建-手动" as const, detail: "赛事手动录入，等待赛程公布" },
+      { id: 2, operator: "dorrawang", time: "2026-03-10 16:00:00", action: "状态变更" as const, detail: "待审核 → 已审核" },
     ],
   },
 ];
@@ -179,7 +223,7 @@ export const mockFacts: Fact[] = [
   {
     id: 37956, title: "蟾蜍在日落之城b点如何使用停云进攻",
     content: "特工蟾蜍的技能停云在回合开始前可以拾取并重新部署。在日落之城B点进攻时，建议将停云部署在B通道入口，遮挡防守方的视野后快速推进。停云的持续时间较长，可以为团队提供持续的掩护。配合闪光弹使用效果更佳，先投闪光再借助停云推进是常见的战术组合。",
-    status: "已审核",
+    status: "已上线",
     keywords: "[11938] 白银1-4, [11937] 青铜1-3",
     category: "英雄攻略-蟾蜍", sourceType: "-", source: "-",
     sourceContent: "模块名称：任务 模块简介：分为每日任务和每周任务，累计完成10个任意任务可领取周奖励，奖励包含通行证经验",
@@ -195,7 +239,7 @@ export const mockFacts: Fact[] = [
   {
     id: 37955, title: "暮褐在岸堡战场进攻时如何使用烟雾",
     content: "霸凝为暮褐的基础技能，可投掷烟雾道具形成遮挡视野的烟雾墙。在岸堡战场进攻时，推荐在中路或A大道释放烟雾，切断防守方的视野线。烟雾持续约15秒，期间可以安全地切换位置或架设道具。暮褐的烟雾墙是目前游戏中持续时间最长的视野遮挡技能之一，合理使用可以大幅提升团队的战术灵活性。",
-    status: "待审核",
+    status: "已上线",
     keywords: "[11936] 黑铁1-3",
     category: "英雄攻略-暮褐", sourceType: "-", source: "-", sourceContent: "-",
     startTime: "-", endTime: "-", timeDesc: "-", relatedEvents: "-", conflict: "-",

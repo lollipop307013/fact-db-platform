@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gbot 事实库管理平台 · 宣讲材料</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; background: #0f172a; color: #f8fafc; }
+
+.slides { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+
+.slide { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 60px 80px; opacity: 0; pointer-events: none; transform: translateX(60px); transition: opacity 0.4s ease, transform 0.4s ease; z-index: 1; }
+.slide.active { opacity: 1; pointer-events: auto; transform: translateX(0); z-index: 2; }
+.slide.prev { transform: translateX(-60px); }
+
+.slide h1 { font-size: 56px; font-weight: 700; margin-bottom: 16px; letter-spacing: -1px; }
+.slide h2 { font-size: 40px; font-weight: 700; margin-bottom: 32px; letter-spacing: -0.5px; }
+.slide h3 { font-size: 28px; font-weight: 600; margin-bottom: 20px; color: #94a3b8; }
+.slide .subtitle { font-size: 22px; color: #94a3b8; margin-bottom: 48px; }
+.slide p { font-size: 20px; line-height: 1.7; color: #cbd5e1; max-width: 800px; text-align: center; }
+.slide .accent { color: #38bdf8; }
+
+.cover { background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); }
+.cover .logo-area { margin-bottom: 40px; }
+.cover .logo-area .icon { font-size: 80px; margin-bottom: 16px; }
+.cover h1 { background: linear-gradient(135deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.cover .badge { display: inline-block; padding: 8px 24px; background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.3); border-radius: 100px; font-size: 16px; color: #38bdf8; margin-top: 32px; }
+.cover .game-note { margin-top: 20px; font-size: 14px; color: #64748b; }
+
+.standard { background: #0f172a; }
+.standard .slide-body { width: 100%; max-width: 1100px; }
+.standard h2 { text-align: left; width: 100%; max-width: 1100px; border-bottom: 2px solid #1e293b; padding-bottom: 16px; }
+.standard h2 .step-num { display: inline-block; width: 40px; height: 40px; background: #38bdf8; color: #0f172a; border-radius: 50%; text-align: center; line-height: 40px; font-size: 20px; margin-right: 16px; vertical-align: middle; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; width: 100%; max-width: 1100px; margin-top: 32px; }
+.two-col .col { text-align: left; }
+.two-col .col h3 { font-size: 22px; color: #38bdf8; margin-bottom: 16px; }
+.two-col .col ul { list-style: none; }
+.two-col .col ul li { font-size: 18px; color: #cbd5e1; padding: 8px 0; padding-left: 24px; position: relative; }
+.two-col .col ul li::before { content: "\2192"; position: absolute; left: 0; color: #38bdf8; }
+
+.three-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; width: 100%; max-width: 1100px; margin-top: 32px; }
+.card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 28px; text-align: left; transition: border-color 0.2s; }
+.card:hover { border-color: #38bdf8; }
+.card .card-icon { font-size: 36px; margin-bottom: 12px; }
+.card h3 { font-size: 20px; font-weight: 600; margin-bottom: 8px; color: #f8fafc; }
+.card p { font-size: 15px; color: #94a3b8; text-align: left; line-height: 1.6; }
+
+.flow { display: flex; align-items: center; gap: 0; width: 100%; max-width: 1100px; margin-top: 40px; overflow-x: auto; }
+.flow-step { flex-shrink: 0; width: 160px; background: #1e293b; border: 2px solid #334155; border-radius: 12px; padding: 20px 16px; text-align: center; position: relative; }
+.flow-step .step-icon { font-size: 32px; margin-bottom: 8px; }
+.flow-step h4 { font-size: 15px; font-weight: 600; color: #f8fafc; margin-bottom: 4px; }
+.flow-step p { font-size: 12px; color: #94a3b8; text-align: center; }
+.flow-arrow { flex-shrink: 0; font-size: 24px; color: #38bdf8; margin: 0 4px; }
+
+.nav { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 16px; z-index: 100; }
+.nav button { width: 48px; height: 48px; border-radius: 50%; border: 1px solid #334155; background: #1e293b; color: #cbd5e1; font-size: 20px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
+.nav button:hover { background: #334155; color: #f8fafc; border-color: #38bdf8; }
+.nav .page-info { font-size: 14px; color: #64748b; min-width: 60px; text-align: center; }
+
+.progress { position: fixed; top: 0; left: 0; height: 3px; background: #38bdf8; transition: width 0.4s ease; z-index: 100; }
+
+.highlight-box { background: rgba(56,189,248,0.1); border: 1px solid rgba(56,189,248,0.3); border-radius: 12px; padding: 24px 32px; margin-top: 32px; width: 100%; max-width: 1100px; text-align: left; }
+.highlight-box .label { font-size: 14px; color: #38bdf8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+.highlight-box .value { font-size: 20px; color: #f8fafc; line-height: 1.6; }
+.tag { display: inline-block; padding: 4px 12px; border-radius: 100px; font-size: 13px; font-weight: 500; }
+.tag-blue { background: rgba(56,189,248,0.15); color: #38bdf8; }
+.tag-green { background: rgba(34,197,94,0.15); color: #22c55e; }
+.tag-yellow { background: rgba(250,204,21,0.15); color: #facc15; }
+.tag-red { background: rgba(239,68,68,0.15); color: #ef4444; }
+.tag-gray { background: rgba(100,116,139,0.15); color: #64748b; }
+
+.num-list { counter-reset: slide-num; list-style: none; width: 100%; max-width: 1100px; margin-top: 24px; }
+.num-list li { counter-increment: slide-num; font-size: 18px; color: #cbd5e1; padding: 16px 0 16px 56px; position: relative; border-bottom: 1px solid #1e293b; }
+.num-list li::before { content: counter(slide-num); position: absolute; left: 0; top: 16px; width: 36px; height: 36px; background: #1e293b; border: 1px solid #334155; border-radius: 50%; text-align: center; line-height: 36px; font-size: 16px; color: #38bdf8; font-weight: 600; }
+
+.stats-bar { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 16px; }
+.stat-pill { background: #1e293b; padding: 8px 16px; border-radius: 6px; font-size: 14px; color: #cbd5e1; }
+.stat-pill strong { color: #38bdf8; font-size: 18px; margin-right: 4px; }
+
+.closing { background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); }
+.closing h1 { font-size: 48px; }
+.closing .contact { margin-top: 48px; font-size: 20px; color: #94a3b8; }
+.closing .contact .item { margin: 12px 0; }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<div class="slides" id="slides">
+
+<!-- Slide 1: 封面 -->
+<div class="slide cover active" data-slide="0">
+  <div class="logo-area">
+    <div class="icon">📂</div>
+  </div>
+  <h1>Gbot 事实库管理平台</h1>
+  <p class="subtitle">事实库管理平台 · 一期功能介绍</p>
+  <div class="badge">运营团队宣讲材料 · 2026.07</div>
+  <div class="game-note">演示游戏：CodeV 无畏契约：源能行动（21116）</div>
+</div>
+
+<!-- Slide 2: 背景与痛点 -->
+<div class="slide standard" data-slide="1">
+  <h2><span class="step-num">1</span>为什么需要事实库？</h2>
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <h3>📌 当前痛点</h3>
+        <ul>
+          <li>白皮书内容分散，缺乏统一管理入口</li>
+          <li>事实、实体、事件数据割裂，关联关系不清晰</li>
+          <li>AI 提取结果无审核流程，质量难保证</li>
+          <li>数据是否被 Gbot 召回不透明</li>
+          <li>无法主动检测事实库的错误表述</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>🎯 平台目标</h3>
+        <ul>
+          <li>统一管理事实、实体、事件三类数据</li>
+          <li>AI 提取 + 人工审核，保证质量</li>
+          <li>提供 FactRAG 问题回复能力，反向验证覆盖度</li>
+          <li>提供错误表述检测能力，辅助批量修复</li>
+          <li>多游戏、多语言支持</li>
+        </ul>
+      </div>
+    </div>
+    <div class="highlight-box" style="margin-top:40px;">
+      <div class="label">模块定位</div>
+      <div class="value">事实库管理平台是 Gbot 的数据源头，目前部署在 <strong>gbot.woa.com/#/contentLibrary/entityManagement</strong>。支持多游戏、多语言，一期已上线实体/事件/事实管理和事实提取审核能力。</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 3: 6个子模块 -->
+<div class="slide standard" data-slide="2">
+  <h2><span class="step-num">2</span>6个子模块</h2>
+  <div class="slide-body">
+    <div class="three-cards">
+      <div class="card">
+        <div class="card-icon">👤</div>
+        <h3>实体管理</h3>
+        <p>管理游戏内实体（角色/装备/技能等），列表+树状双视图</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📅</div>
+        <h3>事件管理</h3>
+        <p>管理带时间线的事件（版本/活动/赛事等）</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📋</div>
+        <h3>事实管理</h3>
+        <p>已入库事实查询，分类树导航，统计同步状态</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">📥</div>
+        <h3>事实提取</h3>
+        <p>粘贴文本/上传 CSV，AI 自动提取，审核后入库</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">💬</div>
+        <h3>问题回复（FactRAG）</h3>
+        <p>输入真实玩家问题，验证事实库能否答上来</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔍</div>
+        <h3>错误表述检测</h3>
+        <p>输入错误/正确表述对，召回疑似错误事实辅助修复</p>
+      </div>
+    </div>
+    <div class="highlight-box">
+      <div class="label">💡 三层结构</div>
+      <div class="value">前 3 个是<strong>基础管理</strong>（管数据）；事实提取是<strong>数据注入</strong>（把数据灌进去）；问题回复 + 错误表述检测是<strong>数据验证</strong>（数据质量怎么样）。</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 4: 实体管理 Tab -->
+<div class="slide standard" data-slide="3">
+  <h2><span class="step-num">3</span>实体管理 Tab</h2>
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <h3>👤 实际界面字段</h3>
+        <ul>
+          <li><strong>名称</strong>（必填）</li>
+          <li><strong>别名</strong>（多个用逗号分隔，用于匹配）</li>
+          <li><strong>分类</strong>（如：喷漆、称号、卡面、赛季等）</li>
+          <li><strong>描述</strong></li>
+          <li><strong>审核状态</strong>：待审核 / 已审核</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>🔍 列表功能</h3>
+        <ul>
+          <li><strong>筛选</strong>：搜索 + 语言 + 分类 + 状态</li>
+          <li><strong>视图切换</strong>：列表视图 / 树状视图</li>
+          <li><strong>列表操作</strong>：编辑 / 查看记录 / 删除</li>
+          <li><strong>批量导入</strong>：通过「批量导入」按钮上传</li>
+        </ul>
+      </div>
+    </div>
+    <div class="highlight-box">
+      <div class="label">📊 实例（CodeV）</div>
+      <div class="value">共 944 个实体 · <span class="tag tag-green">已审核 827</span> · <span class="tag tag-yellow">待审核 117</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 5: 事件管理 Tab -->
+<div class="slide standard" data-slide="4">
+  <h2><span class="step-num">4</span>事件管理 Tab</h2>
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <h3>📅 实际界面字段</h3>
+        <ul>
+          <li><strong>名称</strong>（必填）</li>
+          <li><strong>别名</strong>（多个用逗号分隔）</li>
+          <li><strong>时间描述</strong>（自然语言，如"序章六、第六章赛季"）</li>
+          <li><strong>分类</strong>（如：活动、赛季等）</li>
+          <li><strong>审核状态</strong>：待审核 / 已审核</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>🔍 列表功能</h3>
+        <ul>
+          <li><strong>筛选</strong>：搜索 + 语言 + 分类 + 状态 + 创建时间（新到旧）</li>
+          <li><strong>视图切换</strong>：列表视图 / 树状视图</li>
+          <li><strong>列表操作</strong>：编辑 / 查看记录 / 删除</li>
+        </ul>
+      </div>
+    </div>
+    <div class="highlight-box">
+      <div class="label">📊 实例（CodeV）</div>
+      <div class="value">共 85 个事件 · <span class="tag tag-green">已审核 80</span> · <span class="tag tag-yellow">待审核 5</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 6: 事实管理 Tab -->
+<div class="slide standard" data-slide="5">
+  <h2><span class="step-num">5</span>事实管理 Tab</h2>
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <h3>📋 左侧 · 事实分类树</h3>
+        <ul>
+          <li>全部分类</li>
+          <li>任务相关</li>
+          <li>公告相关</li>
+          <li>商业化</li>
+          <li>地图</li>
+          <li>常见问题</li>
+          <li>攻略</li>
+          <li>服务类 &amp; 福利</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>🔍 右侧 · 列表功能</h3>
+        <ul>
+          <li><strong>筛选</strong>：ID 搜索 + 事实搜索 + 语言 + 状态</li>
+          <li><strong>列开关</strong>：「含多语言列」勾选</li>
+          <li><strong>列表操作</strong>：编辑 / 查看记录 / 删除</li>
+        </ul>
+      </div>
+    </div>
+    <div class="highlight-box">
+      <div class="label">📊 实例（CodeV）</div>
+      <div class="value">共 10739 条事实 · <span class="tag tag-green">已审核 10713</span> · <span class="tag tag-yellow">待审核 0</span> · <span class="tag tag-gray">已删除 26</span> · <span class="tag tag-blue">已上传 10739</span> · <span class="tag tag-yellow">待更新 0</span></div>
+    </div>
+    <div class="highlight-box" style="margin-top:16px;">
+      <div class="label">💡 同步状态说明</div>
+      <div class="value">顶部统计展示<strong>已上传 / 待上传 / 待更新 / 上传失败</strong>，可一眼看到数据同步情况。<strong>表格列不展示同步状态</strong>——以顶部统计为准。</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 7: 核心流程总览 -->
+<div class="slide standard" data-slide="6">
+  <h2><span class="step-num">6</span>核心流程：文本 → AI → 审核 → 入库</h2>
+  <div class="slide-body">
+    <div class="flow">
+      <div class="flow-step" style="border-color:#38bdf8;">
+        <div class="step-icon">📝</div>
+        <h4>输入文本/CSV</h4>
+        <p>粘贴白皮书<br>或上传 CSV</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step" style="border-color:#818cf8;">
+        <div class="step-icon">🤖</div>
+        <h4>AI 提取</h4>
+        <p>deepseek-v3-2<br>单段 / 多段模式</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step" style="border-color:#fbbf24;">
+        <div class="step-icon">👁️</div>
+        <h4>提取结果审核</h4>
+        <p>右侧待处理 Tab<br>通过 / 编辑 / 拒绝</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step" style="border-color:#34d399;">
+        <div class="step-icon">📦</div>
+        <h4>入库归档</h4>
+        <p>审核通过的事实<br>进入事实库</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step" style="border-color:#f87171;">
+        <div class="step-icon">🔄</div>
+        <h4>自动同步</h4>
+        <p>后端自动<br>已上传统计可见</p>
+      </div>
+    </div>
+    <div class="highlight-box" style="margin-top:40px;">
+      <div class="label">⚠️ 关键原则</div>
+      <div class="value">AI 提取结果<strong>不直接入库</strong>，必须经过人工审核。审核通过后系统自动同步，<strong>通过顶部"已上传"统计观察同步情况</strong>。</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 8: 事实提取 Tab · 核心操作 -->
+<div class="slide standard" data-slide="7">
+  <h2><span class="step-num">7</span>事实提取 Tab · 核心操作</h2>
+  <div class="slide-body">
+    <h3 style="color:#38bdf8;font-size:20px;margin-bottom:20px;">左侧：输入 → AI 提取 ｜ 右侧：提取结果审核</h3>
+    <div class="two-col">
+      <div class="col">
+        <h3>📥 左侧 · 输入与提取</h3>
+        <ul>
+          <li><strong>输入方式</strong>：文本粘贴 / CSV 导入（两种切换）</li>
+          <li><strong>提取模式</strong>：单段提取 / 多段提取</li>
+          <li><strong>当前模型</strong>：deepseek-v3-2-251201</li>
+          <li>点击「提取事实」按钮启动 AI 任务</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>👁️ 右侧 · 提取结果审核</h3>
+        <ul>
+          <li>Tab：<strong>待处理</strong> / <strong>已归档</strong></li>
+          <li>筛选：<strong>全部</strong> / <strong>只看自己的</strong></li>
+          <li>勾选多条可批量操作（通过 / 拒绝）</li>
+        </ul>
+      </div>
+    </div>
+    <div class="highlight-box">
+      <div class="label">📌 操作提示</div>
+      <div class="value">AI 提取是异步任务，提交后可以去做其他事。右侧「待处理」Tab 顶部会显示<strong>共 X 条 · 待审核 X · 已审核 X</strong>统计。</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 9: 审核操作 · 提取结果 -->
+<div class="slide standard" data-slide="8">
+  <h2><span class="step-num">8</span>审核操作 · 提取结果</h2>
+  <div class="slide-body">
+    <ul class="num-list">
+      <li><strong>逐条审核</strong>：在「待处理」Tab 展开每条事实，操作「通过」/「编辑」/「拒绝」。适合精细审核场景。</li>
+      <li><strong>批量操作</strong>：勾选多条事实，点击「批量通过」或「批量拒绝」。适合快速清理场景。</li>
+      <li><strong>归档</strong>：审核完成的事实可手动归档到「已归档」Tab，便于区分"待办"和"已完成"。</li>
+      <li><strong>筛选</strong>：切换「只看自己的」可只看到自己提交或审核过的任务。</li>
+    </ul>
+    <div class="highlight-box" style="margin-top:24px;">
+      <div class="label">⚠️ 与一期旧的差异</div>
+      <div class="value">当前是<strong>「提取结果审核」</strong>模式（一期简化版）——按批次走审核。<strong>二期规划中</strong>的「审核任务」Tab（按来源 + 置信度分流）还没上线。</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 10: 编辑抽屉 · 手动保存 -->
+<div class="slide standard" data-slide="9">
+  <h2><span class="step-num">9</span>编辑抽屉 · 手动保存</h2>
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <h3>📄 左栏 · 事实主体</h3>
+        <ul>
+          <li><strong>事实内容</strong>（必填，核心文本）</li>
+          <li><strong>标题</strong>（选填）</li>
+          <li><strong>时间描述</strong>（自然语言）</li>
+          <li><strong>开始/结束时间</strong>（ISO 格式）</li>
+          <li><strong>多语言切换</strong>：共 6 种语言（中/英/阿/土/俄/繁中）</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>🏷️ 右栏 · 元数据</h3>
+        <ul>
+          <li><strong>关联实体</strong>：搜索选择已审核实体</li>
+          <li><strong>关联事件</strong>：搜索选择已审核事件</li>
+          <li><strong>矛盾事实</strong>：标记与此事实冲突的其他事实</li>
+          <li><strong>来源信息</strong>：来源类型/URL/原文片段</li>
+        </ul>
+      </div>
+    </div>
+    <div class="highlight-box">
+      <div class="label">💡 保存规则</div>
+      <div class="value">编辑抽屉内的修改<strong>不会自动保存</strong>——必须点击底部「保存」按钮才会落库。关闭抽屉、切换事实或切换语言时如果未保存会弹出确认提示，避免误操作丢失修改。</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 11: 问题回复 Tab · FactRAG -->
+<div class="slide standard" data-slide="10">
+  <h2><span class="step-num">10</span>问题回复 Tab · FactRAG</h2>
+  <div class="slide-body">
+    <div class="highlight-box" style="margin-top:0;">
+      <div class="label">💡 模块定位</div>
+      <div class="value">用业务方真实问题测试事实库能否答上来，<strong>检测盲区</strong>。答不上来 = 事实库缺数据，需要补充。</div>
+    </div>
+    <div class="two-col">
+      <div class="col">
+        <h3>🎛 页面控件（单行）</h3>
+        <ul>
+          <li><strong>输入问题</strong>：文本框（"请输入您的问题"）</li>
+          <li>☑ <strong>生成回复</strong></li>
+          <li>☑ <strong>仅使用已审核内容</strong></li>
+          <li>☑ <strong>LLM 筛选实体/事件</strong></li>
+          <li>点击「查询」按钮</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>📋 业务用法</h3>
+        <ul>
+          <li>当业务方反馈"Gbot 答不上来某个玩家问题"时</li>
+          <li>用原问题在这里测，看是缺数据还是没召回</li>
+          <li>返回内容会显示参考的实体/事件/事实</li>
+          <li>对症下药：缺的补，召回了的改 query</li>
+        </ul>
+      </div>
+    </div>
+    <div class="highlight-box">
+      <div class="label">📌 区别于一期旧版</div>
+      <div class="value">这是 <strong>FactRAG</strong>（基于事实库的 RAG）。相比传统 FAQ 匹配，它直接走事实库 + LLM 推理，更接近真实 Gbot 回答链路。</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 12: 错误表述检测 Tab -->
+<div class="slide standard" data-slide="11">
+  <h2><span class="step-num">11</span>错误表述检测与修正建议</h2>
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <h3>📝 输入配置（自上而下）</h3>
+        <ul>
+          <li><strong>* 错误表述</strong>（必填）：错误的事实片段</li>
+          <li><strong>* 正确表述</strong>（必填）：对应的正确表述</li>
+          <li><strong>完整原始内容</strong>（选填）：文档上下文，提示语明确"可帮助更好匹配"</li>
+          <li><strong>召回方式</strong>（多选）：模糊匹配 / 实体匹配 / RAG 召回</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>🔍 业务场景</h3>
+        <ul>
+          <li>白皮书/公告更新：把 X → Y 改了</li>
+          <li>但库里还有旧值 X 的事实条目</li>
+          <li>用这个工具召回所有疑似 X 的事实</li>
+          <li>辅助人工批量改成新值 Y</li>
+        </ul>
+      </div>
+    </div>
+    <div class="highlight-box">
+      <div class="label">📌 一期能力边界</div>
+      <div class="value">当前仅做<strong>"发现 + 建议"</strong>——系统召回疑似错误事实并提供修改建议，但<strong>不能自动落库</strong>。需要人工逐条确认修改。</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 13: 常见问题 FAQ -->
+<div class="slide standard" data-slide="12">
+  <h2><span class="step-num">12</span>常见问题 FAQ</h2>
+  <div class="slide-body">
+    <ul class="num-list">
+      <li><strong>Q：平台入口在哪？</strong><br>A：地址是 <strong>gbot.woa.com/#/contentLibrary/entityManagement</strong>。这是一个独立的单页应用，浏览器直接打开即可使用，需要通过 OA 权限申请才能访问后端服务。</li>
+      <li><strong>Q：找不到"上线/下线"或"更新匹配库"按钮？</strong><br>A：一期没有这些手动操作入口。事实审核通过后由后端自动同步，通过「事实管理」顶部「已上传/待上传/待更新/上传失败」统计观察同步情况。</li>
+      <li><strong>Q：编辑抽屉改了内容没保存就关闭会怎样？</strong><br>A：会弹出确认提示。但一旦关闭未保存，所有改动会丢失。改完<strong>记得点保存按钮</strong>。</li>
+      <li><strong>Q：事实提取的 AI 模型是什么？</strong><br>A：当前是 <strong>deepseek-v3-2-251201</strong>。提取模式有"单段提取"和"多段提取"两种，区别在于输入文本的处理方式。</li>
+      <li><strong>Q：问题回复（FactRAG）跟早先的"问答匹配测试"什么关系？</strong><br>A：FactRAG 是本期能力，直接走事实库 + LLM 推理，更接近真实 Gbot 链路。旧版"问答匹配测试"是另一个基于 FAQ 库的匹配工具，两者不同。</li>
+      <li><strong>Q：实体/事件/事实三类数据的关联关系？</strong><br>A：实体和事件是独立对象；事实必须关联到一个或多个实体/事件。一期通过"关联实体""关联事件"字段手动建立关联，二期会做 AI 自动关联。</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Slide 14: 一期范围 & 暂不支持能力 -->
+<div class="slide standard" data-slide="13">
+  <h2><span class="step-num">13</span>一期范围 &amp; 暂不支持能力</h2>
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <h3>✅ 一期已支持</h3>
+        <ul>
+          <li>实体 / 事件 / 事实 三类数据 CRUD（列表+树状双视图）</li>
+          <li>事实提取（文本粘贴 + CSV 导入，单段/多段模式）</li>
+          <li>提取结果审核（待处理 / 已归档，批量操作）</li>
+          <li>问题回复 FactRAG（生成回复、仅用已审核、LLM 筛选）</li>
+          <li>错误表述检测（发现 + 建议，不自动落库）</li>
+          <li>顶部统计（已审核/待审核/已上传/待更新等）</li>
+          <li>多游戏切换 + 6 语言字段</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>🚫 暂不支持（后续规划）</h3>
+        <ul>
+          <li>"更新匹配库"等手动同步操作（一期已下线）</li>
+          <li>错误表述检测 → 自动修改入库（需人工确认）</li>
+          <li>合并功能（实体/事实合并，二期新增）</li>
+          <li>AI 自动关联实体/事件（二期）</li>
+          <li>审核任务 Tab（按来源置信度分流，二期）</li>
+          <li>操作日志中心（二期）</li>
+          <li>实体/事件/事实的批量编辑</li>
+        </ul>
+      </div>
+    </div>
+    <div class="highlight-box">
+      <div class="label">📌 反馈通道</div>
+      <div class="value">使用中发现新功能缺口或体验问题，找 yzhinan。会同步更新到 PRD 文档和需求池。</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 15: 联系方式 & Q&A -->
+<div class="slide closing" data-slide="14">
+  <h1>Q &amp; A</h1>
+  <p class="subtitle">感谢观看，有任何问题欢迎交流</p>
+  <div class="contact">
+    <div class="item">🌐 平台地址：<span class="accent">gbot.woa.com/#/contentLibrary/entityManagement</span></div>
+    <div class="item">📧 演示游戏：<span class="accent">CodeV 无畏契约：源能行动（21116）</span></div>
+    <div class="item" style="margin-top:32px;">💬 问题反馈：南勇志（yzhinan）</div>
+  </div>
+</div>
+
+</div>
+
+<!-- Navigation -->
+<div class="nav">
+  <button onclick="prevSlide()" title="上一张">◀</button>
+  <span class="page-info" id="pageInfo">1 / 15</span>
+  <button onclick="nextSlide()" title="下一张">▶</button>
+</div>
+
+<script>
+let current = 0;
+const slides = document.querySelectorAll('.slide');
+const total = slides.length;
+
+function updateProgress() {
+  const pct = ((current + 1) / total) * 100;
+  document.getElementById('progress').style.width = pct + '%';
+  document.getElementById('pageInfo').textContent = (current + 1) + ' / ' + total;
+}
+
+function goTo(n) {
+  slides[current].classList.remove('active');
+  slides[current].classList.add('prev');
+  current = Math.max(0, Math.min(n, total - 1));
+  slides[current].classList.remove('prev');
+  slides[current].classList.add('active');
+  updateProgress();
+}
+
+function nextSlide() { if (current < total - 1) goTo(current + 1); }
+function prevSlide() { if (current > 0) goTo(current - 1); }
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextSlide();
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') prevSlide();
+});
+
+let touchStartX = 0;
+document.addEventListener('touchstart', e => { touchStartX = e.changedTouches[0].screenX; });
+document.addEventListener('touchend', e => {
+  const diff = e.changedTouches[0].screenX - touchStartX;
+  if (Math.abs(diff) > 50) diff > 0 ? prevSlide() : nextSlide();
+});
+
+updateProgress();
+</script>
+</body>
+</html>

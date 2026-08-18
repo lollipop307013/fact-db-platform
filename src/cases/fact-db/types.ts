@@ -1,27 +1,67 @@
+export type ContentLanguage = "zh" | "en" | "ar" | "tr" | "ru" | "yue";
+
+/** 编辑窗口中的多语言字段；中文主字段继续兼容旧数据结构。 */
+export type LocalizedContent = Partial<Record<ContentLanguage, {
+  title?: string;
+  content?: string;
+  description?: string;
+  alias?: string;
+  timeDesc?: string;
+}>>;
+
 export interface Entity {
   id: number;
   title: string;
   tag: string;
-  status: "待审核" | "已审核";
+  /** 多选分类，tag 保留为兼容旧列表的主分类。 */
+  categories?: string[];
+  /** 正式线上数据标记；待审核候选仅存在于内容审核任务。 */
+  status: "已上线";
   source: string;
   description: string;
   alias?: string;
+  /** 多语言别名与描述。 */
+  translations?: LocalizedContent;
+  /** 是否作为分类节点使用。 */
+  isCategory?: boolean;
   logs?: OperationLog[];
 }
+
+/** 事件的时间定义方式：时间跨度（有明确起止）/ 固定周期（按星期重复）/ 固定周期+时间跨度（有限期周期）/ 时间未定 */
+export type EventTimeType = "span" | "recurring" | "hybrid" | "undetermined";
 
 export interface GameEvent {
   id: number;
   name: string;
   description: string;
   eventType: string;
-  status: "已审核" | "待审核";
+  /** 多选分类，eventType 保留为兼容旧筛选与列表的主分类。 */
+  categories?: string[];
+  /** 多语言别名、描述和时间说明。 */
+  translations?: LocalizedContent;
+  /** 正式线上数据标记；待审核候选仅存在于内容审核任务。 */
+  status: "已上线";
+  /** 时间定义方式，默认视为 span（兼容旧数据） */
+  timeType?: EventTimeType;
+  /** timeType=span 时的起止时间；仍保留字符串格式以兼容旧展示，"-" 表示未设置/进行中无结束时间 */
   startTime: string;
   endTime: string;
+  /** timeType=recurring 时按星期重复的日期，1=周一...7=周日 */
+  recurringWeekdays?: number[];
+  /** timeType=recurring/hybrid 时每次持续的起止时刻（HH:mm） */
+  recurringTimeRange?: [string, string];
+  /** timeType=recurring/hybrid 时单次持续天数（1=当日，2=跨两天） */
+  recurringDurationDays?: number;
+  /** timeType=recurring/hybrid 的规则文字描述（如"每周三、周五 19:00-21:00"）；timeType=undetermined 时用于说明原因（如"预计Q3上线，具体时间待定"） */
+  timeDesc?: string;
   source: string;
   remark: string;
   alias?: string;
   logs?: OperationLog[];
 }
+
+/** 事件表单分类值，复用事件数据模型的定义。 */
+export type EventTagValue = GameEvent["eventType"];
 
 /** 事实来源环境 */
 export type FactEnv = "test" | "prod";
@@ -38,6 +78,11 @@ export interface Fact {
   source?: string;
   sourceUrl?: string;
   sourceContent?: string;
+  /** 多语言事实内容与时间说明。 */
+  translations?: LocalizedContent;
+  /** 关联实体 ID；keywords 继续兼容旧列表展示。 */
+  relatedEntityIds?: string[];
+  conflictReason?: string;
   startTime?: string;
   endTime?: string;
   timeDesc?: string;
@@ -94,21 +139,14 @@ export interface OperationLog {
 }
 
 /**
- * 事实状态流转规则：
- *   新建/导入 → 待审核（唯一入口，不可从其他状态转回）
- *   待审核 → 已审核（审核通过）
- *   待审核 → 已拒绝（审核拒绝，终态）
- *   已审核 → 已上线（发布）
- *   已上线 → 已下线（下线）
- *   已下线 → 已上线（重新上线）
- *   测试→正式同步：系统行为，直接置为已上线，记录 action=同步
+ * 正式事实的线上业务状态：
+ *   已上线 ⇄ 已下线
+ * 待审核、通过、拒绝均由内容审核任务维护，不进入事实管理列表或事实数据模型。
  */
-export type FactStatus = "待审核" | "已审核" | "已上线" | "已下线";
+export type FactStatus = "已上线" | "已下线";
 
-/** 每种状态允许流转到的下一步（空数组=终态） */
+/** 正式线上事实可执行的业务状态流转。 */
 export const STATUS_TRANSITIONS: Record<FactStatus, FactStatus[]> = {
-  "待审核": ["已审核"],
-  "已审核": ["已上线"],
   "已上线": ["已下线"],
   "已下线": ["已上线"],
 };

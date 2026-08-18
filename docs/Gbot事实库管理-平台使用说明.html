@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gbot 事实库管理 · 平台使用说明</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    background: #f5f7fa;
+    color: #2c3e50;
+    line-height: 1.7;
+  }
+  .container {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 40px 32px 80px;
+  }
+  header {
+    background: linear-gradient(135deg, #5350ff 0%, #7d6cff 100%);
+    color: #fff;
+    padding: 56px 32px 48px;
+    text-align: center;
+    margin: -40px -32px 32px;
+    border-radius: 0;
+  }
+  header h1 {
+    margin: 0 0 8px;
+    font-size: 32px;
+    font-weight: 600;
+    letter-spacing: 1px;
+  }
+  header .subtitle {
+    font-size: 15px;
+    opacity: 0.9;
+    margin: 0;
+  }
+  header .meta {
+    margin-top: 18px;
+    font-size: 12px;
+    opacity: 0.75;
+  }
+  h2 {
+    font-size: 22px;
+    margin-top: 48px;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #5350ff;
+    color: #2c3e50;
+  }
+  h3 {
+    font-size: 17px;
+    margin-top: 28px;
+    margin-bottom: 12px;
+    color: #5350ff;
+  }
+  h4 {
+    font-size: 15px;
+    margin-top: 20px;
+    margin-bottom: 8px;
+    color: #555;
+  }
+  p, li { font-size: 14px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 18px;
+    font-size: 13px;
+    background: #fff;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid #eef0f4;
+  }
+  th { background: #f8f9fc; font-weight: 600; color: #4a5568; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafbfd; }
+  code {
+    background: #f0f2f7;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: "SF Mono", Consolas, Monaco, monospace;
+    font-size: 12.5px;
+    color: #d63384;
+  }
+  pre {
+    background: #2d3748;
+    color: #e2e8f0;
+    padding: 16px 20px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+  blockquote {
+    margin: 12px 0;
+    padding: 12px 16px;
+    background: #f0f4ff;
+    border-left: 4px solid #5350ff;
+    color: #555;
+    font-size: 13.5px;
+    border-radius: 0 6px 6px 0;
+  }
+  blockquote.warn { background: #fff7e6; border-left-color: #f59e0b; }
+  blockquote.tip { background: #ecfdf5; border-left-color: #10b981; }
+  .toc {
+    background: #fff;
+    border: 1px solid #e6eaf2;
+    border-radius: 8px;
+    padding: 18px 24px;
+    margin-bottom: 32px;
+  }
+  .toc-title { font-weight: 600; margin-bottom: 8px; color: #4a5568; font-size: 14px; }
+  .toc ul { list-style: none; padding: 0; margin: 0; columns: 2; column-gap: 24px; }
+  .toc li { padding: 4px 0; font-size: 13px; }
+  .toc a { color: #5350ff; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .module-card {
+    background: #fff;
+    border: 1px solid #e6eaf2;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 12px 0;
+  }
+  .module-card .title {
+    font-weight: 600;
+    color: #5350ff;
+    margin-bottom: 6px;
+    font-size: 15px;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    margin-right: 6px;
+  }
+  .badge-primary { background: #ebeaff; color: #5350ff; }
+  .badge-success { background: #d1fae5; color: #065f46; }
+  .badge-warning { background: #fef3c7; color: #92400e; }
+  .badge-danger  { background: #fee2e2; color: #991b1b; }
+  .badge-default { background: #e5e7eb; color: #374151; }
+  .step {
+    counter-reset: step;
+    padding-left: 0;
+    list-style: none;
+  }
+  .step li {
+    counter-increment: step;
+    padding: 12px 16px 12px 50px;
+    position: relative;
+    background: #fafbfd;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    border-left: 3px solid #5350ff;
+  }
+  .step li::before {
+    content: counter(step);
+    position: absolute;
+    left: 14px;
+    top: 12px;
+    width: 24px;
+    height: 24px;
+    background: #5350ff;
+    color: #fff;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 24px;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .preview-link {
+    display: inline-block;
+    background: #5350ff;
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 13px;
+  }
+  .preview-link:hover { background: #4640dd; }
+  .footer {
+    text-align: center;
+    color: #999;
+    font-size: 12px;
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid #e6eaf2;
+  }
+  .field-required { color: #d63384; font-weight: 600; }
+  .screenshot-placeholder {
+    background: #f0f2f7;
+    border: 1px dashed #c0c4ce;
+    border-radius: 6px;
+    padding: 32px 16px;
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+    margin: 12px 0;
+  }
+  .screenshot-figure {
+    margin: 16px 0 24px;
+    background: #fff;
+    border: 1px solid #e6eaf2;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  }
+  .screenshot-figure img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .screenshot-caption {
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #64748b;
+    background: #fafbfd;
+    border-top: 1px solid #e6eaf2;
+  }
+  details {
+    background: #fff;
+    border: 1px solid #e6eaf2;
+    border-radius: 6px;
+    padding: 12px 18px;
+    margin: 8px 0;
+  }
+  details summary {
+    cursor: pointer;
+    font-weight: 500;
+    color: #4a5568;
+  }
+  details[open] summary { margin-bottom: 10px; color: #5350ff; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>Gbot 事实库管理</h1>
+  <p class="subtitle">平台使用说明（运营版）</p>
+  <div class="meta">v1.0 · 2026-05-25 · 知几实验室</div>
+</header>
+
+<div class="toc">
+  <div class="toc-title">目录</div>
+  <ul>
+    <li><a href="#intro">一、平台是什么</a></li>
+    <li><a href="#nav">二、模块导航</a></li>
+    <li><a href="#extract">三、提取审核工作台</a></li>
+    <li><a href="#entity">四、实体管理</a></li>
+    <li><a href="#event">五、事件管理</a></li>
+    <li><a href="#fact">六、事实管理</a></li>
+    <li><a href="#import">七、批量导入（CSV）</a></li>
+    <li><a href="#templates">八、四份 CSV 模板说明</a></li>
+    <li><a href="#export">九、导出审核结果</a></li>
+    <li><a href="#faq">十、常见问题（FAQ）</a></li>
+  </ul>
+</div>
+
+<h2 id="intro">一、平台是什么</h2>
+
+<p><strong>Gbot 事实库管理平台</strong>（以下简称"平台"）是面向运营和项目侧的内容生产工具。它把项目方提供的非结构化文档（活动公告、玩法说明、运营笔记等）<strong>提取为可被 AI 检索使用的"事实"</strong>，并以"实体"（角色/道具/概念）和"事件"（活动/赛事/版本）为锚点组织起来，为游戏 Bot/客服提供可信的回答素材。</p>
+
+<h3>核心概念</h3>
+
+<table>
+  <thead><tr><th>概念</th><th>含义</th><th>例子</th></tr></thead>
+  <tbody>
+    <tr><td>实体（Entity）</td><td>游戏中相对稳定的"对象"</td><td>角色"维斯"、皮肤"暗影执行者"、地图"深海明珠"</td></tr>
+    <tr><td>事件（Event）</td><td>有时间属性的"运营/玩法事件"</td><td>"春节活动"、"S23 赛季更新"、"夏日庆典"</td></tr>
+    <tr><td>事实（Fact）</td><td>一句结构化、可被 Bot 引用的陈述</td><td>"维斯的大招冷却时间为 60 秒"</td></tr>
+  </tbody>
+</table>
+
+<h3>核心生产流程</h3>
+
+<ol class="step">
+  <li><strong>提取</strong>：粘贴文本 / 上传 CSV，AI 抽取出候选事实，并自动关联可能涉及的实体、事件</li>
+  <li><strong>审核</strong>：运营在审核工作台逐条核对内容，确认通过 / 拒绝；可以批量处理</li>
+  <li><strong>入库</strong>：审核通过的事实自动同步到 Bot/RAG 检索使用</li>
+  <li><strong>归档</strong>：处理完毕的批次进入归档区，可重复导出供外部团队复核</li>
+</ol>
+
+<h2 id="nav">二、模块导航</h2>
+
+<p>左侧导航栏 → "内容管理" → 6 个 Tab：</p>
+
+<div class="module-card">
+  <div class="title">📋 实体管理</div>
+  <div>查看、创建、编辑、批量导入"实体"</div>
+</div>
+<div class="module-card">
+  <div class="title">📅 事件管理</div>
+  <div>查看、创建、编辑、批量导入"事件"</div>
+</div>
+<div class="module-card">
+  <div class="title">📝 事实管理</div>
+  <div>查看、创建、编辑、批量导入"事实"，含同步状态监测</div>
+</div>
+<div class="module-card">
+  <div class="title">🔄 提取结果审核 <span class="badge badge-primary">核心工作台</span></div>
+  <div>核心工作台。AI 提取后的候选事实在这里逐条审核入库</div>
+</div>
+<div class="module-card">
+  <div class="title">💬 问题回复</div>
+  <div>查询事实库内容，验证 Bot 是否能正确回答</div>
+</div>
+<div class="module-card">
+  <div class="title">⚠️ 错误表述检测</div>
+  <div>批量检测库中事实的描述是否存在表达错误</div>
+</div>
+
+<blockquote>
+顶部 <strong>游戏切换器</strong> 决定当前操作的游戏数据。所有 Tab 都按当前游戏过滤；切换游戏后数据完全独立。
+</blockquote>
+
+<h2 id="extract">三、提取审核工作台</h2>
+
+<h3>3.1 怎么提取</h3>
+
+<p>左侧"提取输入区"提供两种方式：</p>
+
+<ul>
+  <li><strong>文本粘贴</strong>：直接复制活动公告、玩法说明等文本到输入框，点"开始提取"</li>
+  <li><strong>文件导入</strong>：上传 <strong>事实抽取批次模板（CSV）</strong>，由后端自动按行提取（详见 <a href="#import">§ 七</a>）</li>
+</ul>
+
+<figure class="screenshot-figure">
+  <img src="assets/usage-guide/3-1-extract.png" alt="3.1 提取输入区 - 文本粘贴 / CSV 导入" />
+  <figcaption class="screenshot-caption">3.1 提取输入区：支持文本粘贴与 CSV 导入两种输入方式。</figcaption>
+</figure>
+
+<h3>3.2 怎么审核</h3>
+
+<p>右侧"审核区"按批次组织，每个批次卡片对应一次提取动作。卡片内包含若干候选事实，每条事实可以：</p>
+
+<ul>
+  <li><strong>逐条审核</strong>：行内"通过 / 拒绝 / 撤回"按钮，单条决策</li>
+  <li><strong>编辑</strong>：点击"编辑"打开右侧抽屉，修改事实正文、关联实体/事件、补充元数据等</li>
+  <li><strong>整批通过/拒绝</strong>：批次卡片头按钮，对全部"待审核"事实一次性处理</li>
+</ul>
+
+<figure class="screenshot-figure">
+  <img src="assets/usage-guide/3-2-review.png" alt="3.2 审核区批次卡片与单条事实行" />
+  <figcaption class="screenshot-caption">3.2 审核区：按批次展示提取结果，支持逐条查看、通过、拒绝和编辑。</figcaption>
+</figure>
+
+<h3>3.3 批量操作</h3>
+
+<p>审核区采用默认多选交互：批次头和每条事实左侧都有 checkbox。勾选后顶部出现批量操作栏。</p>
+
+<table>
+  <thead><tr><th>操作</th><th>可勾选粒度</th><th>规则</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="badge badge-primary">批量通过 / 批量拒绝</span></td>
+      <td>可以勾选子项，也可以勾选批次头</td>
+      <td>只对待审核条目生效；已标注条目自动跳过</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-success">导出 CSV</span></td>
+      <td>必须覆盖完整批次</td>
+      <td>如果只勾选了某个批次的一部分，前端会 toast 提示「只允许导出整个批次的数据」并阻止导出</td>
+    </tr>
+  </tbody>
+</table>
+
+<blockquote class="tip">
+批次头 checkbox 会联动该批次下所有事实；如果只想批量审核部分事实，可以单独勾选子项。但导出 CSV 时必须保证涉及的每个批次都被完整选中。
+</blockquote>
+
+<h3>3.4 编辑事实</h3>
+
+<p>点行内"编辑"按钮 → 右侧 80% 屏宽抽屉，分为左右两栏：</p>
+
+<ul>
+  <li><strong>左栏（事实主体）</strong>：多语言切换 + 事实内容 + 时效 + 关联实体/事件 + 新建议项</li>
+  <li><strong>右栏（元数据）</strong>：标题 / 分类 / 审核优先级 / 来源信息 / 矛盾与重复 / 扩展 JSON</li>
+</ul>
+
+<figure class="screenshot-figure">
+  <img src="assets/usage-guide/3-4-edit-1.png" alt="3.4 编辑事实抽屉 - 整体布局" />
+  <figcaption class="screenshot-caption">3.4 编辑事实：左侧编辑事实主体、关联实体和关联事件；右侧维护标题、分类、来源和扩展信息。</figcaption>
+</figure>
+<figure class="screenshot-figure">
+  <img src="assets/usage-guide/3-4-edit-2.png" alt="3.4 编辑事实抽屉 - 字段细节" />
+  <figcaption class="screenshot-caption">3.4 编辑事实：完整字段配置区，支持来源、矛盾事实、重复事实和扩展 JSON 等信息维护。</figcaption>
+</figure>
+
+<h3>3.5 入库与归档</h3>
+
+<p>当批次内全部条目都已标注（无待审核）时，批次卡片会自动出现 <code>[入库 / 归档批次]</code> 按钮：</p>
+
+<ul>
+  <li>已通过的事实落入事实库（review_status = approved）</li>
+  <li>已拒绝的事实留痕作为训练资产（review_status = deleted）</li>
+  <li>批次自动归档到"已归档"区</li>
+</ul>
+
+
+
+<h2 id="entity">四、实体管理</h2>
+
+<p>查看当前游戏下的全部实体，支持：</p>
+
+<ul>
+  <li>关键词搜索（名称、别名）</li>
+  <li>按标签、审核状态筛选</li>
+  <li>单条新建、编辑、删除</li>
+  <li><strong>批量导入</strong>（详见 <a href="#import">§ 七</a>）</li>
+</ul>
+
+<figure class="screenshot-figure">
+  <img src="assets/usage-guide/4-1-entity.png" alt="4.1 实体管理列表" />
+  <figcaption class="screenshot-caption">4.1 实体管理：支持查看实体名称、别名、分类、审核状态和简介，提供编辑、查看记录、删除等操作。</figcaption>
+</figure>
+
+<h2 id="event">五、事件管理</h2>
+
+<p>同实体管理，区别在于事件包含时间属性（开始时间/结束时间/时间描述）。</p>
+
+<h2 id="fact">六、事实管理</h2>
+
+<p>除了实体/事件管理共有的能力，事实管理还有两个特别能力：</p>
+
+<h3>6.1 同步状态展示</h3>
+
+<p>列表新增"同步状态"列，4 态由后端自动维护，<strong>不需要手动操作</strong>：</p>
+
+<table>
+  <thead><tr><th>状态</th><th>含义</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-default">待上传</span></td><td>还没上传过（首次入库后默认值）</td></tr>
+    <tr><td><span class="badge badge-warning">待更新</span></td><td>已上传过但内容更新过，需要重新同步</td></tr>
+    <tr><td><span class="badge badge-success">已上传</span></td><td>当前已成功同步到 Bot/RAG 检索使用</td></tr>
+    <tr><td><span class="badge badge-danger">上传失败</span></td><td>同步过程中失败（后端会自动重试）</td></tr>
+  </tbody>
+</table>
+
+<h3>6.2 顶部异常汇总</h3>
+
+<p>列表顶部固定一行汇总条，方便发现异常：</p>
+
+<pre><code>📊 同步状态：✅ 已上传 1240   ⏳ 待上传 32   🔄 待更新 18   ⚠ 失败 5    [查看失败 →]</code></pre>
+
+<p>点击 <code>[查看失败]</code> 自动筛选所有 failed 条目。</p>
+
+<h2 id="import">七、批量导入（CSV）</h2>
+
+<blockquote>
+首期文件导入<strong>仅支持 CSV</strong>。其它格式（PDF / Word / Excel）后续版本支持。
+</blockquote>
+
+<h3>7.1 两条入口</h3>
+
+<table>
+  <thead><tr><th>入口</th><th>用途</th><th>是否走 AI 抽取</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>提取审核工作台 → "📎 文件导入"</td>
+      <td>大段文本喂 AI 抽事实</td>
+      <td>✅ 走</td>
+    </tr>
+    <tr>
+      <td>实体/事件/事实管理 → "批量导入"</td>
+      <td>已有结构化数据直接入库</td>
+      <td>❌ 不走，按字段原样入库</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>7.2 上传步骤</h3>
+
+<ol class="step">
+  <li>点击对应入口，下载该入口对应的模板（首次使用建议先下载样本）</li>
+  <li>按模板字段填写内容（详见 <a href="#templates">§ 八</a>），保存为 .csv（编码 UTF-8 with BOM）</li>
+  <li>上传文件 → 上方出现"占位卡片"显示进度</li>
+  <li>等待后端处理完成（通常数秒到数分钟，由批次大小决定）</li>
+  <li>处理完毕：审核入口的进入审核区批次卡片；管理入口的直接刷新列表</li>
+</ol>
+
+<blockquote class="warn">
+单次上传 ≤ 1000 行，文件大小 ≤ 5MB。超出请分批。
+</blockquote>
+
+<h3>7.3 失败行处理</h3>
+
+<p>如果批次中部分行因字段错误（如必填字段缺失、ID 不存在等）失败，整体仍然 success，但占位卡片头部会显示 <code>⚠ N 行异常</code>。点击可看具体哪几行因什么原因失败，可下载"失败行 CSV"修订后重新上传。</p>
+
+<h2 id="templates">八、四份 CSV 模板说明</h2>
+
+<blockquote class="tip">
+列名采用<strong>中文</strong>，方便填写。多语言列首期不暴露在模板里——需要补多语言时进编辑表单逐条补。
+</blockquote>
+
+<h3>8.1 事实抽取批次模板（CSV抽取）</h3>
+
+<p>用途：在<strong>提取审核工作台</strong>上传，AI 会从"知识文本"列抽取出多条事实。</p>
+
+<table>
+  <thead><tr><th>列名</th><th>必填</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>标题</td><td>-</td><td>该批次的标题，可选</td></tr>
+    <tr><td>其它上下文</td><td>-</td><td>给 AI 的额外背景信息（如"游戏背景：东方玄幻"），提升抽取准确度</td></tr>
+    <tr><td>知识文本</td><td><span class="field-required">必填</span></td><td>待抽取的原文（AI 输入主体）</td></tr>
+    <tr><td>分类ID</td><td>-</td><td>抽取出的事实统一归属此分类</td></tr>
+    <tr><td>来源类型</td><td>-</td><td>自定义来源类型，如 wiki / manual</td></tr>
+    <tr><td>来源</td><td>-</td><td>来源 URL 或来源说明</td></tr>
+    <tr><td>扩展信息</td><td>-</td><td>JSON 字符串（如 <code>{"campaign_id":"SPRING_2026"}</code>），业务方自定义透传</td></tr>
+  </tbody>
+</table>
+
+<details>
+<summary>样例（点击展开）</summary>
+<pre><code>标题,其它上下文,知识文本,分类ID,来源类型,来源,扩展信息
+张三角色介绍,游戏背景：东方玄幻,张三是修真者…大招冷却 60 秒。,3001,wiki,https://wiki.example.com/zhangsan,
+春节活动公告,2026 年 2 月运营活动,春节活动期间…活动时间 2026-02-10 至 2026-02-20。,3002,manual,运营公告,"{""campaign_id"":""SPRING_2026""}"</code></pre>
+</details>
+
+<h3>8.2 实体导入模板</h3>
+
+<p>用途：在<strong>实体管理 Tab</strong> 批量导入；不抽取，按字段直接入库。</p>
+
+<table>
+  <thead><tr><th>列名</th><th>必填</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>实体名称</td><td><span class="field-required">必填</span></td><td>中文名称</td></tr>
+    <tr><td>标签（多个用英文逗号分隔）</td><td>-</td><td>标签 ID，如 <code>1001,1002</code></td></tr>
+    <tr><td>别名（多个用英文逗号分隔）</td><td>-</td><td>如 <code>老李,李哥</code></td></tr>
+    <tr><td>简介</td><td>-</td><td>实体的简要描述</td></tr>
+  </tbody>
+</table>
+
+<h3>8.3 事件导入模板</h3>
+
+<p>用途：在<strong>事件管理 Tab</strong> 批量导入；不抽取。</p>
+
+<table>
+  <thead><tr><th>列名</th><th>必填</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>事件名称</td><td><span class="field-required">必填</span></td><td>事件中文名</td></tr>
+    <tr><td>标签（多个用英文逗号分隔）</td><td>-</td><td>标签 ID</td></tr>
+    <tr><td>别名（多个用英文逗号分隔）</td><td>-</td><td></td></tr>
+    <tr><td>开始时间</td><td>-</td><td>ISO 8601，如 <code>2026-02-10T00:00:00+08:00</code></td></tr>
+    <tr><td>结束时间</td><td>-</td><td>同上，可空</td></tr>
+    <tr><td>时间描述</td><td>-</td><td>周期/重复描述，如"持续整个 7 月"</td></tr>
+  </tbody>
+</table>
+
+<h3>8.4 事实导入模板</h3>
+
+<p>用途：在<strong>事实管理 Tab</strong> 批量导入；不抽取。</p>
+
+<table>
+  <thead><tr><th>列名</th><th>必填</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>事实ID</td><td>-</td><td>留空由系统分配</td></tr>
+    <tr><td>标题</td><td>-</td><td>事实标题，可选</td></tr>
+    <tr><td>事实内容</td><td><span class="field-required">必填</span></td><td>事实正文，如"维斯的大招冷却 60 秒"</td></tr>
+    <tr><td>分类ID</td><td>-</td><td>所属分类</td></tr>
+    <tr><td>来源类型 / 来源 / 来源URL / 来源内容</td><td>-</td><td>来源溯源信息</td></tr>
+    <tr><td>开始时间 / 结束时间 / 时间描述</td><td>-</td><td>事实的时效</td></tr>
+    <tr><td>关联实体ID（多个用英文逗号分隔）</td><td>-</td><td>如 <code>1001,1002</code></td></tr>
+    <tr><td>关联事件ID（多个用英文逗号分隔）</td><td>-</td><td></td></tr>
+    <tr><td>矛盾事实ID（多个用英文逗号分隔）</td><td>-</td><td></td></tr>
+    <tr><td>审核状态（待审核/已审核）</td><td>-</td><td>默认"待审核"；可填"已审核"直接通过</td></tr>
+  </tbody>
+</table>
+
+<h2 id="export">九、导出审核结果</h2>
+
+<p>导出的目标场景：把批次内的事实<strong>给外部团队复核 / 标注</strong>。导出步骤：</p>
+
+<ol class="step">
+  <li>在审核区勾选要导出的事实（可以点批次头一次性勾完整批次）</li>
+  <li>点顶部批量操作栏中的 <code>[导出 CSV]</code></li>
+  <li>如果涉及的某个批次没有完整勾选，系统会提示：<strong>只允许导出整个批次的数据</strong></li>
+  <li>确认弹窗中可以看到批次的状态分布；点"确认导出"</li>
+  <li>下载文件并自动归档涉及的批次</li>
+</ol>
+
+<h3>9.1 导出范围</h3>
+
+<blockquote class="warn">
+<strong>重要规则：</strong> 导出 = <strong>完整批次内全部条目</strong>（含 待审核 / 已审核 / 已拒绝 三态）。系统不支持只导出一个批次里的部分事实。
+</blockquote>
+
+<h3>9.2 导出字段</h3>
+
+<p>列名与"事实导入模板"对齐：</p>
+
+<table>
+  <thead><tr><th>列分组</th><th>列名</th></tr></thead>
+  <tbody>
+    <tr><td>基础</td><td>事实ID / 标题 / 事实内容 / 分类ID</td></tr>
+    <tr><td>来源</td><td>来源类型 / 来源 / 来源URL / 来源内容</td></tr>
+    <tr><td>时效</td><td>开始时间 / 结束时间 / 时间描述</td></tr>
+    <tr><td>关联</td><td>关联实体ID / 关联事件ID / 矛盾事实ID</td></tr>
+    <tr><td>审核信息</td><td>审核状态（待审核 / 已审核 / 已拒绝）</td></tr>
+  </tbody>
+</table>
+
+<h3>9.3 多选合并</h3>
+
+<p>多选多个批次导出时，所有事实合并到一份 CSV。<strong>不加 batch_id 列</strong>（后端处理不需要）。</p>
+
+<h3>9.4 自动归档</h3>
+
+<p>导出后涉及的批次<strong>全部自动归档</strong>，进入"已归档"区。归档区可重新导出（不限次数），但不能再修改条目状态。</p>
+
+<h2 id="faq">十、常见问题（FAQ）</h2>
+
+<details>
+  <summary>Q1. 提取出的"建议新增实体"是什么？要怎么处理？</summary>
+  <p>AI 提取事实时会发现一些目前实体库还没有的实体（如"暗影执行者"），平台会标记为"建议新增"等待审核者决策：</p>
+  <ul>
+    <li><strong>保留</strong>：审核保留时立即调接口创建该实体并拿到正式 ID，事实关联此 ID</li>
+    <li><strong>丢弃</strong>：不创建该实体，事实也不关联</li>
+  </ul>
+  <p>如果不确定，可以先<strong>编辑实体卡片</strong>修改名称/描述/标签后再保留。</p>
+</details>
+
+<details>
+  <summary>Q2. 文件导入处理时间长能不能关页面？</summary>
+  <p>可以。后端处理是异步的，前端只是轮询任务状态。即使关闭页面，处理仍在后端进行；下次打开页面，占位卡片会自动恢复并显示最新状态。</p>
+</details>
+
+<details>
+  <summary>Q3. CSV 上传后部分行报错怎么办？</summary>
+  <p>整体仍会成功导入未报错的行；占位卡片头部会显示 <code>⚠ N 行异常</code>，点击可查看具体哪几行哪些字段错。可下载"失败行 CSV"修订后重新上传。</p>
+</details>
+
+<details>
+  <summary>Q4. 同步状态显示"上传失败"了我要做什么？</summary>
+  <p>不需要做任何操作，后端会自动重试。如果长时间停留在 failed 状态（超过半天），请联系开发同学排查。</p>
+</details>
+
+<details>
+  <summary>Q5. 我把一个事实拒绝了还能恢复吗？</summary>
+  <p>在审核工作台未入库前，可以点"撤回"恢复为"待审核"。一旦批次入库归档，已拒绝的事实就<strong>不能恢复</strong>了——但它仍保留在数据库中作为训练资产，没有被物理删除。</p>
+</details>
+
+<details>
+  <summary>Q6. 多语言字段在哪里填？</summary>
+  <p>首期 CSV 模板不包含多语言列。需要补多语言（英语 / 阿拉伯语 / 土耳其语 / 俄语 / 粤语）时，请进入<strong>事实管理</strong>逐条点编辑，在抽屉左栏顶部切换语种后填写。</p>
+</details>
+
+<details>
+  <summary>Q7. 已归档的批次能不能再修改？</summary>
+  <p>不能。归档后批次卡片切换为只读模式，事实条目只能查看、不能改状态。但可以无限次重新导出。</p>
+</details>
+
+<details>
+  <summary>Q8. 导出的 CSV 拿给外部团队后他们怎么把审核结果回填？</summary>
+  <p>外部团队在 CSV 文件的<strong>"审核状态"</strong>列填写最新审核结果（已审核 / 已拒绝 / 待审核）；改完后再上传到<strong>事实管理 Tab</strong>的"批量导入"，由系统按照"审核状态"列覆盖入库。</p>
+</details>
+
+<details>
+  <summary>Q9. 平台支持多游戏吗？</summary>
+  <p>支持。顶部<strong>游戏切换器</strong>决定当前看到的数据。每个游戏的实体/事件/事实完全独立，切换时数据不会混淆。批量导入时不需要在 CSV 模板中指定游戏 ID，系统会自动按当前选中的游戏入库。</p>
+</details>
+
+<details>
+  <summary>Q10. 勾选批次头会自动勾子项吗？</summary>
+  <p>会。批次头 checkbox = 自动勾选该批次下所有事实；如果手动取消单个子项，批次头会自动转为"半选"状态。</p>
+</details>
+
+<div class="footer">
+  <p>Gbot 事实库管理 · 平台使用说明 v1.0</p>
+  <p>有问题反馈给：知几实验室 · yzhinan</p>
+</div>
+
+</div>
+</body>
+</html>

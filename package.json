@@ -8,10 +8,12 @@
     "build": "tsc && vite build"
   },
   "dependencies": {
+    "lucide-react": "^1.31.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tdesign-icons-react": "^0.3.0",
-    "tdesign-react": "^1.7.0"
+    "tdesign-react": "^1.7.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/react": "^18.2.37",

@@ -152,7 +152,7 @@ export default function QaTab() {
               {mockQaEvents.map((e) => (
                 <div key={e.id} className="qa-fact-card">
                   <div style={{ marginBottom: 4 }}>
-                    <span style={{ fontWeight: 700, color: "var(--td-brand-color)" }}>事件 #{e.id}</span>
+                    <span style={{ fontWeight: 600, color: "var(--td-brand-color)" }}>事件 #{e.id}</span>
                     <span style={{ fontSize: 12, color: "var(--td-text-color-placeholder)", marginLeft: 8 }}>分类: {e.eventType}</span>
                   </div>
                   <div style={{ marginBottom: 4 }}>{e.name}</div>
@@ -170,7 +170,7 @@ export default function QaTab() {
               {mockFacts.map((f) => (
                 <div key={f.id} className="qa-fact-card">
                   <div style={{ marginBottom: 4 }}>
-                    <span style={{ fontWeight: 700, color: "var(--td-brand-color)" }}>事实 #{f.id}</span>
+                    <span style={{ fontWeight: 600, color: "var(--td-brand-color)" }}>事实 #{f.id}</span>
                     <span style={{ fontSize: 12, color: "var(--td-text-color-placeholder)", marginLeft: 8 }}>相似度: {f.similarity}%</span>
                   </div>
                   <div style={{ marginBottom: 4 }}>{f.content}</div>
