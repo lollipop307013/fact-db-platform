@@ -96,11 +96,19 @@ export default function MergeDialog({ visible, targetEntity, onClose, onMerge }:
     return MERGE_FIELDS.map((field) => {
       const targetVal = form.localized[field.lang].description.trim();
       const sourceValues = mergeSourceEntities
-        .map((src) => ({
-          entityId: String(src.id),
-          entityLabel: `#${src.id}${src.title}`,
-          value: (src.translations?.[field.lang]?.description || src.description || "").trim(),
-        }))
+        .map((src) => {
+          // 中文语种：顶层 description 即中文内容，作为中文简介展示；
+          // 其它语种：只取对应语种的值，缺失则留空，不用中文填满
+          const raw =
+            field.lang === "zh"
+              ? (src.translations?.zh?.description || src.description || "")
+              : (src.translations?.[field.lang]?.description || "");
+          return {
+            entityId: String(src.id),
+            entityLabel: `#${src.id}${src.title}`,
+            value: raw.trim(),
+          };
+        })
         .filter((s) => s.value);
 
       if (targetVal) {

@@ -161,8 +161,8 @@ export default function EntityTab() {
         </Space>
       );
     }},
-    { colKey: "op", title: "操作", width: 200, fixed: "right" as const, cell: ({ row }: { row: Entity }) => (
-      <Space size={4}>
+    { colKey: "op", title: "操作", width: 320, minWidth: 320, fixed: "right" as const, cell: ({ row }: { row: Entity }) => (
+      <Space size={4} style={{ whiteSpace: "nowrap" }}>
         <Button variant="text" theme="primary" size="small" onClick={() => handleEdit(row)}>编辑</Button>
         <Button variant="text" theme="primary" size="small" onClick={() => handleMerge(row)}>合并</Button>
         <Button variant="text" theme="primary" size="small" onClick={() => handleOpenLog(row)}>查看记录</Button>

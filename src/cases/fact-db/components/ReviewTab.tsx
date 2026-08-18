@@ -1049,9 +1049,15 @@ export default function ReviewTab({ locator }: { locator?: ReviewLocator | null 
                       )}
                     </span>
                     <Tag size="small" className={`review-grid-type type-${item.objectType}`}>{OBJECT_TYPE_LABELS[item.objectType]}</Tag>
-                    <Tag size="small" theme={item.changeType === "delete" ? "danger" : item.changeType === "update" ? "warning" : "primary"} variant="light">
-                      {CHANGE_TYPE_LABELS[item.changeType]}
-                    </Tag>
+                    {item.conflictType ? (
+                      <Tag size="small" theme="danger" variant="light">
+                        {CONFLICT_TYPE_LABELS[item.conflictType] ?? "冲突"}
+                      </Tag>
+                    ) : (
+                      <Tag size="small" theme={item.changeType === "delete" ? "danger" : item.changeType === "update" ? "warning" : "primary"} variant="light">
+                        {CHANGE_TYPE_LABELS[item.changeType]}
+                      </Tag>
+                    )}
                     <PriorityTag priority={getReviewPriority(item)} />
                   </div>
                 );

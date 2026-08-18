@@ -430,9 +430,9 @@
 .review-change-type[data-type="new"] { color: #15803d; }
 .review-change-type[data-type="update"] { color: #344054; }
 .review-change-type[data-type="delete"] { color: #b91c1c; }
-.review-change-type[data-type="conflict"] { color: #b54708; font-weight: 600; }
-.review-change-type[data-type="contradiction"] { color: #b54708; font-weight: 600; }
-.review-change-type[data-type="duplicate"] { color: #6926c0; font-weight: 600; }
+.review-change-type[data-type="conflict"] { color: #b42318; font-weight: 600; }
+.review-change-type[data-type="contradiction"] { color: #b42318; font-weight: 600; }
+.review-change-type[data-type="duplicate"] { color: #b42318; font-weight: 600; }
 
 /* ===== 极简按钮 ===== */
 .review-tab .btn-minimal.t-button {
