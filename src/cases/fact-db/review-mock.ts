@@ -40,21 +40,29 @@ export const mockReviewItems: ReviewItem[] = [
 export const mockReviewLogs: ReviewLogEntry[] = [];
 
 function getTaskTitle(taskId: string, source: ReviewItem["source"]) {
-  if (taskId.startsWith("IMPORT-ENTITY")) return "实体批量导入审核";
-  if (taskId.startsWith("IMPORT")) return "事实批量导入审核";
+  if (taskId.startsWith("IMPORT")) return "批量导入审核";
   if (taskId.startsWith("CONFLICT")) return "导入冲突待确认";
   if (taskId.startsWith("DUP")) return "导入重复待确认";
-  if (taskId.startsWith("DELETE")) return "事实删除审核";
+  if (taskId.startsWith("DELETE")) return "删除审核";
   return `${REVIEW_SOURCE_LABELS[source]}审核任务`;
+}
+
+/**
+ * 一批入库可能同时包含事实 / 实体 / 事件三类数据，导入类任务统一归并到同一批次，
+ * 不按内容类型拆分。这里把 `IMPORT-ENTITY-*` 归一为 `IMPORT-*` 使其并入同一任务。
+ */
+function normalizeTaskGroupKey(taskId: string): string {
+  return taskId.replace(/^IMPORT-ENTITY-/, "IMPORT-");
 }
 
 /** 把条目按 taskId 聚合成任务，并自动计算处理进度、内容类型和审核人分布。 */
 export function buildReviewTasks(items: ReviewItem[], logs: ReviewLogEntry[] = []): ReviewTask[] {
   const map = new Map<string, ReviewItem[]>();
   for (const item of items) {
-    const group = map.get(item.taskId) || [];
+    const groupKey = normalizeTaskGroupKey(item.taskId);
+    const group = map.get(groupKey) || [];
     group.push(item);
-    map.set(item.taskId, group);
+    map.set(groupKey, group);
   }
 
   const latestLogByItem = new Map<number, ReviewLogEntry>();
