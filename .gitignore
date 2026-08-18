@@ -3,3 +3,7 @@ dist/
 deploy-gh-pages/
 *.local
 .DS_Store
+
+# 需求文档为用户本地自用，不纳入版本控制
+需求细节变更记录.md
+docs/PRD-二期-*.md
