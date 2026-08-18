@@ -9,12 +9,16 @@ export const MOCK_OPERATORS = ["yzhinan", "zhang.san", "li.si", "wang.wu", "chen
  * 任务创建时分配的顺序号。该映射模拟服务端持久化序列：即使任务删除，已占用编号也不会分配给新任务。
  * 原始 taskId 仍仅作为内部批次关联键使用。
  */
+/** 原始 taskId 仍保留在 REVIEW_TASK_SEQUENCE 中，供 supersededBy 关联展示使用。 */
 export const REVIEW_TASK_SEQUENCE: Record<string, number> = {
   "IMPORT-20260715": 13,
   "IMPORT-ENTITY-20260715": 17,
   "DELETE-20260715": 14,
   "CONFLICT-20260715": 15,
   "DUP-20260715": 16,
+  // 按「来源 + 创建日期」归并后的批次键（同来源同时间 = 同一任务）
+  "import@2026-07-15": 13,
+  "qa-offline@2026-07-15": 14,
 };
 
 const runtimeTaskSequences = new Map<string, number>();
@@ -39,27 +43,27 @@ export const mockReviewItems: ReviewItem[] = [
 /** 审核操作日志 mock：记录每一次提交结论的人员与结果（用于"操作日志"查看入口） */
 export const mockReviewLogs: ReviewLogEntry[] = [];
 
-function getTaskTitle(taskId: string, source: ReviewItem["source"]) {
-  if (taskId.startsWith("IMPORT")) return "批量导入审核";
-  if (taskId.startsWith("CONFLICT")) return "导入冲突待确认";
-  if (taskId.startsWith("DUP")) return "导入重复待确认";
-  if (taskId.startsWith("DELETE")) return "删除审核";
+function getTaskTitle(source: ReviewItem["source"]): string {
+  if (source === "import") return "批量导入审核";
+  if (source === "qa-offline") return "删除审核";
   return `${REVIEW_SOURCE_LABELS[source]}审核任务`;
 }
 
 /**
- * 一批入库可能同时包含事实 / 实体 / 事件三类数据，导入类任务统一归并到同一批次，
- * 不按内容类型拆分。这里把 `IMPORT-ENTITY-*` 归一为 `IMPORT-*` 使其并入同一任务。
+ * 同一来源、同一创建时间（按日期）的审核条目归并为同一批次任务，不按操作类型
+ * （导入 / 冲突 / 重复 / 实体）拆分。例如同一次导入产生的「导入」「冲突」「重复」
+ * 条目同属一个任务。
  */
-function normalizeTaskGroupKey(taskId: string): string {
-  return taskId.replace(/^IMPORT-ENTITY-/, "IMPORT-");
+function getBatchKey(item: ReviewItem): string {
+  const date = String(item.createdAt).slice(0, 10);
+  return `${item.source}@${date}`;
 }
 
 /** 把条目按 taskId 聚合成任务，并自动计算处理进度、内容类型和审核人分布。 */
 export function buildReviewTasks(items: ReviewItem[], logs: ReviewLogEntry[] = []): ReviewTask[] {
   const map = new Map<string, ReviewItem[]>();
   for (const item of items) {
-    const groupKey = normalizeTaskGroupKey(item.taskId);
+    const groupKey = getBatchKey(item);
     const group = map.get(groupKey) || [];
     group.push(item);
     map.set(groupKey, group);
@@ -141,7 +145,7 @@ export function buildReviewTasks(items: ReviewItem[], logs: ReviewLogEntry[] = [
       id: taskId,
       sequenceNo,
       displayId: `#${sequenceNo}`,
-      title: getTaskTitle(taskId, group[0].source),
+      title: getTaskTitle(group[0].source),
       source: group[0].source,
       sourceLabel: REVIEW_SOURCE_LABELS[group[0].source],
       createdAt,
